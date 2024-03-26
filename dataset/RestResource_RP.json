@@ -1,0 +1,30 @@
+{
+	"name": "RestResource_RP",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "RestService_RP",
+			"type": "LinkedServiceReference",
+			"parameters": {
+				"incidentId": {
+					"value": "@dataset().incidentId",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"rpSessionToken": {
+				"type": "string"
+			},
+			"rpClentId": {
+				"type": "string"
+			},
+			"incidentId": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "RestResource",
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

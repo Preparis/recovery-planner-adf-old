@@ -1,0 +1,160 @@
+{
+	"name": "Migrate Technologies Partitioned",
+	"properties": {
+		"activities": [
+			{
+				"name": "Build Technology Migration table",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "drop table if exists migration_technology_data;\r\n\r\ncreate table migration_technology_data as (\r\n    with combined_tech_data as (\r\n        SELECT \r\n        (select uuid()) as technologyId\r\n        , name\r\n        , rpo\r\n        , rpoType \r\n        , case rpoType\r\n            when 0 then 'Milliseconds'\r\n            when 1 then 'Seconds'\r\n            when 2 then 'Minutes'\r\n            when 3 then 'Hours'\r\n            when 4 then 'Days'\r\n            when 5 then 'Weeks'\r\n            end as rpoTypeName\r\n        , case rpoType \r\n            when 0 then rpo/1000\r\n            when 5 then 7 * rpo\r\n            else rpo\r\n            end as rpoTime\r\n        , case rpoType\r\n            when 0 then rpo/1000\r\n            when 1 then rpo\r\n            when 2 then rpo * 60\r\n            when 3 then rpo * 3600\r\n            when 4 then rpo * 3600 * 24\r\n            when 5 then rpo * 3600 * 24 * 7\r\n            end as rpoTimeInSeconds\r\n        , case rpoType \r\n            when 0 then 'E5967FB9-16CE-4545-A5F5-2B78014C9016'\r\n            when 1 then 'E5967FB9-16CE-4545-A5F5-2B78014C9016'\r\n            when 2 then 'E5967FB9-16CE-4545-A5F5-2B78014C9016'\r\n            when 3 then '41BB6FC1-DF74-42B5-8F41-E55E5A4570ED'\r\n            when 4 then '0CAB3E34-0F19-4CC6-B580-CC8DC70AF2D5'\r\n            when 5 then '0CAB3E34-0F19-4CC6-B580-CC8DC70AF2D5'\r\n            end as preparisTimeDurationUnitId\r\n        , case rpoType \r\n            when 0 then 'Second * 1000'\r\n            when 1 then 'Second'\r\n            when 2 then 'Minute'\r\n            when 3 then 'Hour'\r\n            when 4 then 'Day'\r\n            when 5 then 'Day * 7'\r\n            end as preparisTimeDurationConversion\r\n        FROM t_resource\r\n    )\r\n    select \r\n    ROW_NUMBER() OVER (ORDER BY technologyId) row_num\r\n    , ctd.*\r\n    from combined_tech_data ctd\r\n);\r\n\r\nselect 'Done' as 'Lookup Hack';",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Execute Pipeline Lookup Iteration Data",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Build Technology Migration table",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Lookup Iteration Data",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"tableName": "migration_technology_data",
+						"rp_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						},
+						"rp_server_name": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "ForEach Technology",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Lookup Iteration Data",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Execute Pipeline Lookup Iteration Data').output.pipelineReturnValue.iteration_data_array",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "Execute Pipeline Migrate Technologies",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Migrate Technologies",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"rp_server_name": {
+										"value": "@pipeline().parameters.rp_server_name",
+										"type": "Expression"
+									},
+									"rp_db_name": {
+										"value": "@pipeline().parameters.rp_db_name",
+										"type": "Expression"
+									},
+									"portalEntityId": {
+										"value": "@pipeline().parameters.portalEntityId",
+										"type": "Expression"
+									},
+									"CreatedByGUID": {
+										"value": "@pipeline().parameters.CreatedByGUID",
+										"type": "Expression"
+									},
+									"iterationStart": {
+										"value": "@item().iteration_start",
+										"type": "Expression"
+									},
+									"iterationStop": {
+										"value": "@item().iteration_stop",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"rp_server_name": {
+				"type": "string"
+			},
+			"rp_db_name": {
+				"type": "string"
+			},
+			"portalEntityId": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "Vendors and Technologies"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T12:56:34Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

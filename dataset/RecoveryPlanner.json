@@ -1,0 +1,33 @@
+{
+	"name": "RecoveryPlanner",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "AzureMySql_dynamic",
+			"type": "LinkedServiceReference",
+			"parameters": {
+				"db_name": {
+					"value": "@dataset().db_name",
+					"type": "Expression"
+				},
+				"server_name": {
+					"value": "@dataset().server_name",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"db_name": {
+				"type": "string",
+				"defaultValue": "marshall"
+			},
+			"server_name": {
+				"type": "string",
+				"defaultValue": "recovery-planner-mysql-server.mysql.database.azure.com"
+			}
+		},
+		"annotations": [],
+		"type": "AzureMySqlTable",
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

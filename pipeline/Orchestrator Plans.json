@@ -1,0 +1,616 @@
+{
+	"name": "Orchestrator Plans",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup Plans in Departments",
+				"type": "Lookup",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "\r\n/* departments with plans */\r\nwith plansInDepartment as (\r\n    select p.id as plan_id, p.name as plan_name, DATE(p.lastUpdateDate) as LastUpdateDate, md.id as department_id, md.name as department_name, md.newDepartmentId\r\n    from migration_department md\r\n    join t_plan_department pd on md.id = pd.department_id\r\n    join t_plan p on pd.plan_id = p.id\r\n    where forEvent = 0\r\n\r\n)\r\n, dupePlanNames as (\r\n    select pid.plan_name, pid.department_id, count(pid.plan_id)\r\n    from plansInDepartment pid\r\n    group by pid.plan_name, pid.department_id\r\n    having count(pid.plan_id) > 1\r\n)\r\n, dupePlanData as (\r\n    select plan_id\r\n    , CONCAT(pid.plan_name, '_', cast(LastUpdateDate as char)) as plan_name\r\n    , LastUpdateDate\r\n    , pid.department_id\r\n    , pid.department_name\r\n    , pid.newDepartmentId  \r\n    from plansInDepartment pid\r\n    join dupePlanNames dpn on pid.plan_name = dpn.plan_name and pid.department_id = dpn.department_id\r\n)\r\n, noDupePlanData as(\r\n    select pid.* \r\n    from plansInDepartment pid\r\n    left join dupePlanData dpd on pid.plan_id = dpd.plan_id\r\n    where dpd.plan_id is null\r\n)\r\n\r\nselect * from dupePlanData\r\nunion\r\nselect * from noDupePlanData",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach Plan in Department",
+				"type": "ForEach",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Lookup Plans in Departments",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup Plans in Departments').output.value",
+						"type": "Expression"
+					},
+					"isSequential": true,
+					"activities": [
+						{
+							"name": "Execute Pipeline Get or Create Department Plans Folder",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Get or Create Preparis Folder",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"preparisBaseURL": {
+										"value": "@pipeline().parameters.preparisBaseURL",
+										"type": "Expression"
+									},
+									"preparisDeviceIdAsBase64": {
+										"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+										"type": "Expression"
+									},
+									"preparisSessionToken": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisSessionToken",
+										"type": "Expression"
+									},
+									"entityId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+										"type": "Expression"
+									},
+									"rootEntityId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+										"type": "Expression"
+									},
+									"folderId": {
+										"value": "@activity('Execute Pipeline Get or Create Plans Folder').output.pipelineReturnValue.preparisFolderGuid",
+										"type": "Expression"
+									},
+									"portalId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+										"type": "Expression"
+									},
+									"folderName": {
+										"value": "@item().department_name",
+										"type": "Expression"
+									},
+									"parentFolderId": {
+										"value": "@activity('Execute Pipeline get or Create Plans Folder').output.pipelineReturnValue.preparisFolderGuid",
+										"type": "Expression"
+									}
+								}
+							}
+						},
+						{
+							"name": "Execute Pipeline Create Preparis Plan Document",
+							"type": "ExecutePipeline",
+							"dependsOn": [
+								{
+									"activity": "Execute Pipeline Get or Create Department Plans Folder",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Create Preparis Plan Document",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"rpSessionToken": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.rpSessionToken",
+										"type": "Expression"
+									},
+									"rpClientId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.rpClientId",
+										"type": "Expression"
+									},
+									"plan_id": {
+										"value": "@item().plan_id",
+										"type": "Expression"
+									},
+									"rpBaseURL": {
+										"value": "@pipeline().parameters.rpBaseURL",
+										"type": "Expression"
+									},
+									"rp_server_name": {
+										"value": "@pipeline().parameters.rp_server_name",
+										"type": "Expression"
+									},
+									"rp_db_name": {
+										"value": "@pipeline().parameters.rp_db_name",
+										"type": "Expression"
+									},
+									"preparisBaseURL": {
+										"value": "@pipeline().parameters.preparisBaseURL",
+										"type": "Expression"
+									},
+									"preparisDeviceIdAsBase64": {
+										"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+										"type": "Expression"
+									},
+									"preparisSessionToken": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisSessionToken",
+										"type": "Expression"
+									},
+									"preparisCurrentPortalId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+										"type": "Expression"
+									},
+									"department_name": {
+										"value": "@item().department_name",
+										"type": "Expression"
+									},
+									"plan_name": {
+										"value": "@item().plan_name",
+										"type": "Expression"
+									},
+									"preparisUserId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisUserId",
+										"type": "Expression"
+									},
+									"preparisFolderGuid": {
+										"value": "@activity('Execute Pipeline Get or Create Department Plans Folder').output.pipelineReturnValue.preparisFolderGuid",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Execute Pipeline Get Document Migration Objects",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get Document Migration Objects",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"rp_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						},
+						"rp_server_name": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						},
+						"preparisBaseURL": {
+							"value": "@pipeline().parameters.preparisBaseURL",
+							"type": "Expression"
+						},
+						"preparisDeviceIdAsBase64": {
+							"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+							"type": "Expression"
+						},
+						"rpBaseURL": {
+							"value": "@pipeline().parameters.rpBaseURL",
+							"type": "Expression"
+						},
+						"rpRestUserName": {
+							"value": "@pipeline().parameters.rpRestUserName",
+							"type": "Expression"
+						},
+						"rpRestUserPassword": {
+							"value": "@pipeline().parameters.rpRestUserPassword",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Get or Create Plans Folder",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get Document Migration Objects",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get or Create Preparis Folder",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"preparisBaseURL": {
+							"value": "@pipeline().parameters.preparisBaseURL",
+							"type": "Expression"
+						},
+						"preparisDeviceIdAsBase64": {
+							"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+							"type": "Expression"
+						},
+						"preparisSessionToken": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisSessionToken",
+							"type": "Expression"
+						},
+						"entityId": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+							"type": "Expression"
+						},
+						"rootEntityId": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+							"type": "Expression"
+						},
+						"folderId": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisRootFolderId",
+							"type": "Expression"
+						},
+						"portalId": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+							"type": "Expression"
+						},
+						"folderName": "Plans",
+						"parentFolderId": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisRootFolderId",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Lookup Plans not in Departments",
+				"type": "Lookup",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "ForEach Plan in Department",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "/* plans without departments */\r\nwith plansWithoutDepartment as (\r\n    select p.id as plan_id, p.name as plan_name, DATE(p.lastUpdateDate) as LastUpdateDate\r\n    from t_plan p\r\n    left join t_plan_department pd on p.id = pd.plan_id\r\n    where pd.plan_id is null\r\n    and forEvent = 0\r\n)\r\n, dupePlanNames as (\r\n    select pwod.plan_name, count(pwod.plan_id)\r\n    from plansWithoutDepartment pwod\r\n    group by pwod.plan_name\r\n    having count(pwod.plan_id) > 1\r\n)\r\n, dupePlanData as (\r\n    select plan_id\r\n    , CONCAT(pwod.plan_name, '_', cast(LastUpdateDate as char)) as plan_name\r\n    , LastUpdateDate\r\n    from plansWithoutDepartment pwod\r\n    join dupePlanNames dpn on pwod.plan_name = dpn.plan_name \r\n)\r\n, noDupePlanData as(\r\n    select pwod.* \r\n    from plansWithoutDepartment pwod\r\n    left join dupePlanData dpd on pwod.plan_id = dpd.plan_id\r\n    where dpd.plan_id is null\r\n)\r\n\r\nselect * from dupePlanData\r\nunion\r\nselect * from noDupePlanData\r\n",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach Plan not in a Department",
+				"type": "ForEach",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Lookup Plans not in Departments",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup Plans not in Departments').output.value",
+						"type": "Expression"
+					},
+					"isSequential": true,
+					"activities": [
+						{
+							"name": "Execute Pipeline Create Preparis Plan Document_copy1",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Create Preparis Plan Document",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"rpSessionToken": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.rpSessionToken",
+										"type": "Expression"
+									},
+									"rpClientId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.rpClientId",
+										"type": "Expression"
+									},
+									"plan_id": {
+										"value": "@item().plan_id",
+										"type": "Expression"
+									},
+									"rpBaseURL": {
+										"value": "@pipeline().parameters.rpBaseURL",
+										"type": "Expression"
+									},
+									"rp_server_name": {
+										"value": "@pipeline().parameters.rp_server_name",
+										"type": "Expression"
+									},
+									"rp_db_name": {
+										"value": "@pipeline().parameters.rp_db_name",
+										"type": "Expression"
+									},
+									"preparisBaseURL": {
+										"value": "@pipeline().parameters.preparisBaseURL",
+										"type": "Expression"
+									},
+									"preparisDeviceIdAsBase64": {
+										"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+										"type": "Expression"
+									},
+									"preparisSessionToken": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisSessionToken",
+										"type": "Expression"
+									},
+									"preparisCurrentPortalId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+										"type": "Expression"
+									},
+									"plan_name": {
+										"value": "@item().plan_name",
+										"type": "Expression"
+									},
+									"preparisUserId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisUserId",
+										"type": "Expression"
+									},
+									"preparisFolderGuid": {
+										"value": "@activity('Execute Pipeline Get or Create Plans Folder').output.pipelineReturnValue.preparisFolderGuid",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lookup distinct Plans",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get or Create Plans Folder",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "/* distinct plans */\r\nwith plansWithoutDepartment as (\r\n    select p.id as plan_id, p.name as plan_name, DATE(p.lastUpdateDate) as LastUpdateDate\r\n    from t_plan p\r\n    where forEvent = 0\r\n)\r\n, dupePlanNames as (\r\n    select pwod.plan_name, count(pwod.plan_id)\r\n    from plansWithoutDepartment pwod\r\n    group by pwod.plan_name\r\n    having count(pwod.plan_id) > 1\r\n)\r\n, dupePlanData as (\r\n    select plan_id\r\n    , CONCAT(pwod.plan_name, '_', cast(LastUpdateDate as char)) as plan_name\r\n    , LastUpdateDate\r\n    from plansWithoutDepartment pwod\r\n    join dupePlanNames dpn on pwod.plan_name = dpn.plan_name \r\n)\r\n, noDupePlanData as(\r\n    select pwod.* \r\n    from plansWithoutDepartment pwod\r\n    left join dupePlanData dpd on pwod.plan_id = dpd.plan_id\r\n    where dpd.plan_id is null\r\n)\r\n\r\nselect * from dupePlanData\r\nunion\r\nselect * from noDupePlanData\r\n",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach distinct Plan",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup distinct Plans",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup distinct Plans').output.value",
+						"type": "Expression"
+					},
+					"isSequential": true,
+					"activities": [
+						{
+							"name": "Execute Pipeline Create Plan Document",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Create Preparis Plan Document",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"rpSessionToken": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.rpSessionToken",
+										"type": "Expression"
+									},
+									"rpClientId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.rpClientId",
+										"type": "Expression"
+									},
+									"plan_id": {
+										"value": "@item().plan_id",
+										"type": "Expression"
+									},
+									"rpBaseURL": {
+										"value": "@pipeline().parameters.rpBaseURL",
+										"type": "Expression"
+									},
+									"rp_server_name": {
+										"value": "@pipeline().parameters.rp_server_name",
+										"type": "Expression"
+									},
+									"rp_db_name": {
+										"value": "@pipeline().parameters.rp_db_name",
+										"type": "Expression"
+									},
+									"preparisBaseURL": {
+										"value": "@pipeline().parameters.preparisBaseURL",
+										"type": "Expression"
+									},
+									"preparisDeviceIdAsBase64": {
+										"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+										"type": "Expression"
+									},
+									"preparisSessionToken": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisSessionToken",
+										"type": "Expression"
+									},
+									"preparisCurrentPortalId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+										"type": "Expression"
+									},
+									"plan_name": {
+										"value": "@item().plan_name",
+										"type": "Expression"
+									},
+									"preparisUserId": {
+										"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisUserId",
+										"type": "Expression"
+									},
+									"preparisFolderGuid": {
+										"value": "@activity('Execute Pipeline Get or Create Plans Folder').output.pipelineReturnValue.preparisFolderGuid",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"rp_server_name": {
+				"type": "string",
+				"defaultValue": "recovery-planner-mysql-server.mysql.database.azure.com"
+			},
+			"rp_db_name": {
+				"type": "string",
+				"defaultValue": "fcbc"
+			},
+			"preparisBaseURL": {
+				"type": "string",
+				"defaultValue": "https://dev-main-core.preparisapp.com/"
+			},
+			"preparisDeviceIdAsBase64": {
+				"type": "string",
+				"defaultValue": "ZGV2"
+			},
+			"baseFolderName": {
+				"type": "string",
+				"defaultValue": "Plans"
+			},
+			"rpBaseURL": {
+				"type": "string",
+				"defaultValue": "https://rpx-services.recoveryplanner.us/rpx-rest/"
+			},
+			"rpRestUserName": {
+				"type": "string",
+				"defaultValue": "RPSupport75164"
+			},
+			"rpRestUserPassword": {
+				"type": "string",
+				"defaultValue": "15hOmSs?vItTZXF,Dcz"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T18:59:47Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

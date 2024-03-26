@@ -1,0 +1,122 @@
+{
+	"name": "Create User Without Sites Partitioned",
+	"properties": {
+		"activities": [
+			{
+				"name": "Execute Pipeline Lookup Iteration Data",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Lookup Iteration Data",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"tableName": "migration_users_without_site",
+						"rp_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						},
+						"rp_server_name": {
+							"value": "@pipeline().parameters.rp_db_server",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "ForEach User Without Sites",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Lookup Iteration Data",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Execute Pipeline Lookup Iteration Data').output.pipelineReturnValue.iteration_data_array",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create Users Without Site",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Create Users Without Sites",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"PortalEntityID": {
+										"value": "@pipeline().parameters.PortalEntityID",
+										"type": "Expression"
+									},
+									"CreatedByGUID": {
+										"value": "@pipeline().parameters.CreatedByGUID",
+										"type": "Expression"
+									},
+									"db_name": {
+										"value": "@pipeline().parameters.rp_db_name",
+										"type": "Expression"
+									},
+									"db_server": {
+										"value": "@pipeline().parameters.rp_db_server",
+										"type": "Expression"
+									},
+									"iteration_start": {
+										"value": "@item().iteration_start",
+										"type": "Expression"
+									},
+									"iteration_stop": {
+										"value": "@item().iteration_stop",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"PortalEntityID": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			},
+			"rp_db_name": {
+				"type": "string"
+			},
+			"rp_db_server": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"user_insert_statements": {
+				"type": "Array"
+			}
+		},
+		"folder": {
+			"name": "Users"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T14:45:26Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

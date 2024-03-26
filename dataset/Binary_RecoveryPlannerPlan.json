@@ -1,0 +1,35 @@
+{
+	"name": "Binary_RecoveryPlannerPlan",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "HttpServer_RecoveryPlannerPlans",
+			"type": "LinkedServiceReference",
+			"parameters": {
+				"BaseURL": {
+					"value": "@dataset().BaseURL",
+					"type": "Expression"
+				},
+				"PlanID": {
+					"value": "@dataset().PlanID",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"BaseURL": {
+				"type": "string"
+			},
+			"PlanID": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "Binary",
+		"typeProperties": {
+			"location": {
+				"type": "HttpServerLocation"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

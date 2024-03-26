@@ -1,0 +1,91 @@
+{
+	"name": "Get Preparis Root Folder",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get Preparis Root Folder",
+				"type": "WebActivity",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"method": "POST",
+					"headers": {
+						"Content-Type": "application/json",
+						"token": {
+							"value": "@pipeline().parameters.preparisSessionToken",
+							"type": "Expression"
+						}
+					},
+					"url": {
+						"value": "@concat(pipeline().parameters.preparisBaseURL,'API/GetEntityRootFolder')",
+						"type": "Expression"
+					},
+					"body": {
+						"value": "{\n  \"applicationId\": \"15871a25-1ab0-4c98-9a29-0f2e076c9adc\",\n  \"versionId\": \"39fd8b5d-5151-46d7-aca1-6c9f8f4cd153\",\n  \"clientTransactionKey\": \"00000\",\n  \"deviceIdAsBase64\": \"@{pipeline().parameters.preparisDeviceIdAsBase64}\",\n  \"token\": \"@{pipeline().parameters.preparisSessionToken}\",\n  \"entityId\": \"@{pipeline().parameters.preparisCurrentPortalId}\",\n  \"rootEntityId\": \"@{pipeline().parameters.UserRootPortal}\",\n  \"portalId\": \"@{pipeline().parameters.preparisCurrentPortalId}\",\n  \"createdById\": \"20247852-4d72-437a-bad5-3948cc551feb\",\n  \"lastModifiedById\": \"20247852-4d72-437a-bad5-3948cc551feb\"\n}",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set variable rootFolderID",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get Preparis Root Folder",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "pipelineReturnValue",
+					"value": [
+						{
+							"key": "rootFolderId",
+							"value": {
+								"type": "Expression",
+								"content": "@activity('Get Preparis Root Folder').output.folder.folderId"
+							}
+						}
+					],
+					"setSystemVariable": true
+				}
+			}
+		],
+		"parameters": {
+			"preparisBaseURL": {
+				"type": "string"
+			},
+			"preparisDeviceIdAsBase64": {
+				"type": "string"
+			},
+			"preparisSessionToken": {
+				"type": "string"
+			},
+			"preparisCurrentPortalId": {
+				"type": "string"
+			},
+			"UserRootPortal": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "Documents"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T19:01:40Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

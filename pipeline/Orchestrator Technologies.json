@@ -1,0 +1,176 @@
+{
+	"name": "Orchestrator Technologies",
+	"properties": {
+		"activities": [
+			{
+				"name": "Execute Pipeline Get RP CompanyName",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get RP CompanyName",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"rp_server_name": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						},
+						"rp_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set variable CompanyName",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get RP CompanyName",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "CompanyName",
+					"value": {
+						"value": "@activity('Execute Pipeline Get RP CompanyName').output.pipelineReturnValue.CompanyName",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Get Preparis PortalID",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Set variable CompanyName",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get Preparis Portal ID",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"companyName": {
+							"value": "@variables('CompanyName')",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set variable currentPortalId from DB_copy1",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get Preparis PortalID",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "currentPortalId",
+					"value": {
+						"value": "@activity('Execute Pipeline Get Preparis PortalID').output.pipelineReturnValue.portalEntityId",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Migrate Technologies",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Set variable currentPortalId from DB_copy1",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Migrate Technologies Partitioned",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"rp_server_name": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						},
+						"rp_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						},
+						"portalEntityId": {
+							"value": "@variables('currentPortalId')",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						}
+					}
+				}
+			}
+		],
+		"parameters": {
+			"rp_server_name": {
+				"type": "string",
+				"defaultValue": "recovery-planner-mysql-server.mysql.database.azure.com"
+			},
+			"rp_db_name": {
+				"type": "string",
+				"defaultValue": "ftr"
+			},
+			"CreatedByGUID": {
+				"type": "string",
+				"defaultValue": "7b5ea827-bcd7-4a8a-8807-fc7e94a93455"
+			}
+		},
+		"variables": {
+			"CompanyName": {
+				"type": "String"
+			},
+			"currentPortalId": {
+				"type": "String"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T12:25:36Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

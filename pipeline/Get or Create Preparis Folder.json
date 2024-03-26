@@ -1,0 +1,230 @@
+{
+	"name": "Get or Create Preparis Folder",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get Preparis Folder Status",
+				"type": "WebActivity",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"method": "POST",
+					"headers": {
+						"Content-Type": "application/json",
+						"token": {
+							"value": "@pipeline().parameters.preparisSessionToken",
+							"type": "Expression"
+						}
+					},
+					"url": {
+						"value": "@concat(pipeline().parameters.preparisBaseURL,'API/CheckFolderStatus')",
+						"type": "Expression"
+					},
+					"body": {
+						"value": "{\n  \"applicationId\": \"15871a25-1ab0-4c98-9a29-0f2e076c9adc\",\n  \"versionId\": \"39fd8b5d-5151-46d7-aca1-6c9f8f4cd153\",\n  \"clientTransactionKey\": \"00000\",\n  \"deviceIdAsBase64\": \"@{pipeline().parameters.preparisDeviceIdAsBase64}\",\n  \"token\": \"@{pipeline().parameters.preparisSessionToken}\",\n  \"entityId\": \"@{pipeline().parameters.entityId}\",\n  \"rootEntityId\": \"@{pipeline().parameters.rootEntityId}\",\n  \"portalId\": \"@{pipeline().parameters.portalId}\",\n  \"createdById\": \"20247852-4d72-437a-bad5-3948cc551feb\",\n  \"lastModifiedById\": \"20247852-4d72-437a-bad5-3948cc551feb\",\n  \"folderName\": \"@{pipeline().parameters.folderName}\",\n  \"folderId\": \"@{pipeline().parameters.folderId}\"\n}",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "If Folder Does Not Exist",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "Get Preparis Folder Status",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@equals(activity('Get Preparis Folder Status').output.folderStatus,0)",
+						"type": "Expression"
+					},
+					"ifFalseActivities": [
+						{
+							"name": "Set variable preparisFolderGuid whenFolderExists",
+							"type": "SetVariable",
+							"dependsOn": [],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "preparisFolderGuid",
+								"value": {
+									"value": "@activity('Get Preparis Folder Status').output.folder.folderId",
+									"type": "Expression"
+								}
+							}
+						}
+					],
+					"ifTrueActivities": [
+						{
+							"name": "Create Preparis Folder",
+							"type": "WebActivity",
+							"dependsOn": [
+								{
+									"activity": "Set variable folderNameEncoded_copy1",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"method": "POST",
+								"headers": {
+									"Content-Type": "application/json",
+									"token": {
+										"value": "@pipeline().parameters.preparisSessionToken",
+										"type": "Expression"
+									}
+								},
+								"url": {
+									"value": "@concat(pipeline().parameters.preparisBaseURL,'API/CreateFolder')",
+									"type": "Expression"
+								},
+								"body": {
+									"value": "{\n  \"applicationId\": \"15871a25-1ab0-4c98-9a29-0f2e076c9adc\",\n  \"versionId\": \"39fd8b5d-5151-46d7-aca1-6c9f8f4cd153\",\n  \"clientTransactionKey\": \"00000\",\n  \"deviceIdAsBase64\": \"@{pipeline().parameters.preparisDeviceIdAsBase64}\",\n  \"token\": \"@{pipeline().parameters.preparisSessionToken}\",\n  \"entityId\": \"@{pipeline().parameters.entityId}\",\n  \"rootEntityId\": \"@{pipeline().parameters.rootEntityId}\",\n  \"portalId\": \"@{pipeline().parameters.portalId}\",\n  \"createdById\": \"20247852-4d72-437a-bad5-3948cc551feb\",\n  \"lastModifiedById\": \"20247852-4d72-437a-bad5-3948cc551feb\",\n  \"folderId\": \"@{variables('preparisFolderGuid')}\",\n  \"folderNameAsBase64\": \"@{variables('preparisFolderNameEncoded')}\", \n  \"parentFolderId\": \"@{pipeline().parameters.parentFolderId}\"\n}",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Set variable preparisFolderGuid",
+							"type": "SetVariable",
+							"dependsOn": [],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "preparisFolderGuid",
+								"value": {
+									"value": "@{guid()}",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Set variable folderNameEncoded_copy1",
+							"type": "SetVariable",
+							"dependsOn": [
+								{
+									"activity": "Set variable preparisFolderGuid",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "preparisFolderNameEncoded",
+								"value": {
+									"value": "@base64(pipeline().parameters.folderName)",
+									"type": "Expression"
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Set Pipeline Return Variable",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "If Folder Does Not Exist",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "pipelineReturnValue",
+					"value": [
+						{
+							"key": "preparisFolderGuid",
+							"value": {
+								"type": "Expression",
+								"content": "@variables('preparisFolderGuid')"
+							}
+						}
+					],
+					"setSystemVariable": true
+				}
+			}
+		],
+		"parameters": {
+			"preparisBaseURL": {
+				"type": "string"
+			},
+			"preparisDeviceIdAsBase64": {
+				"type": "string"
+			},
+			"preparisSessionToken": {
+				"type": "string"
+			},
+			"entityId": {
+				"type": "string"
+			},
+			"rootEntityId": {
+				"type": "string"
+			},
+			"folderId": {
+				"type": "string"
+			},
+			"portalId": {
+				"type": "string"
+			},
+			"folderName": {
+				"type": "string"
+			},
+			"parentFolderId": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"preparisFolderGuid": {
+				"type": "String"
+			},
+			"preparisFolderNameEncoded": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "Documents"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T19:01:40Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

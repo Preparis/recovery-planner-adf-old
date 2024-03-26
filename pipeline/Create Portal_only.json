@@ -1,0 +1,155 @@
+{
+	"name": "Create Portal_only",
+	"properties": {
+		"activities": [
+			{
+				"name": "CreateNewPortal",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Create new EntityID",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[dbo].[az_ppentityCustom_CreateNewPortal]",
+					"storedProcedureParameters": {
+						"ParentEntityId": {
+							"value": "b9a3eed5-80b2-4c11-b317-1b2ab2c006aa",
+							"type": "Guid"
+						},
+						"CompanyName": {
+							"value": {
+								"value": "@pipeline().parameters.CompanyName",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"VerticalID": {
+							"value": "3089683e-a1c9-4c91-9b87-1e3888a9cfcf",
+							"type": "Guid"
+						},
+						"PortalID": {
+							"value": {
+								"value": "@variables('PortalEntityID')",
+								"type": "Expression"
+							},
+							"type": "Guid"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Create new EntityID",
+				"description": "Create the new EntityID and put into a variable that can be re-used without doing a lookup. ",
+				"type": "SetVariable",
+				"dependsOn": [],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "PortalEntityID",
+					"value": {
+						"value": "@{guid()}",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set Default Location ID",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get Default Location GUID",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "LocationEntityId",
+					"value": {
+						"value": "@activity('Get Default Location GUID').output.firstRow.entityId",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Get Default Location GUID",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "CreateNewPortal",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "select e.entityId\nfrom azstudioEntityEntities e \nJOIN azstudioEntityEntityTypes et on e.entityTypeId = et.entityTypeId\nJOIN azstudioEntityStatusTypes st on e.entityStatusTypeId = st.entityStatusTypeId\nwhere entityName =  '@{pipeline().parameters.CompanyName} - default location'\nand et.entityTypeName = 'Location'",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "Preparis",
+						"type": "DatasetReference"
+					}
+				}
+			}
+		],
+		"parameters": {
+			"CompanyName": {
+				"type": "string",
+				"defaultValue": "adftest6"
+			}
+		},
+		"variables": {
+			"PortalEntityID": {
+				"type": "String"
+			},
+			"LocationEntityId": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "Backup"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-02-09T11:38:28Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

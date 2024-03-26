@@ -1,0 +1,35 @@
+{
+	"name": "Binary_RP_Incident",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "HttpServer_RecoveryPlanner_Incidents",
+			"type": "LinkedServiceReference",
+			"parameters": {
+				"rpBaseUrl": {
+					"value": "@dataset().rpBaseUrl",
+					"type": "Expression"
+				},
+				"rpEventId": {
+					"value": "@dataset().eventId",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"eventId": {
+				"type": "string"
+			},
+			"rpBaseUrl": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "Binary",
+		"typeProperties": {
+			"location": {
+				"type": "HttpServerLocation"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

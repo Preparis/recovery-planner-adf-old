@@ -1,0 +1,273 @@
+{
+	"name": "Orchestrator Migrate multiple Customers",
+	"properties": {
+		"activities": [
+			{
+				"name": "ForEach Recovery Planner Database",
+				"type": "ForEach",
+				"dependsOn": [],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@pipeline().parameters.migrationConfig.value",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "Execute Pipeline Orchestrator Migrate Single Portal",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Orchestrator Migrate Single Portal",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"rp_server_name": {
+										"value": "@pipeline().parameters.rp_server_name",
+										"type": "Expression"
+									},
+									"rp_db_name": {
+										"value": "@item().dbName",
+										"type": "Expression"
+									},
+									"CreatedByGUID": {
+										"value": "@variables('CreatedByGUID')",
+										"type": "Expression"
+									}
+								}
+							}
+						},
+						{
+							"name": "Execute Pipeline Orchestrator Vendors",
+							"type": "ExecutePipeline",
+							"dependsOn": [
+								{
+									"activity": "Execute Pipeline Orchestrator Migrate Single Portal",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Orchestrator Vendors",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"rp_server_name": {
+										"value": "@pipeline().parameters.rp_server_name",
+										"type": "Expression"
+									},
+									"rp_db_name": {
+										"value": "@item().dbName",
+										"type": "Expression"
+									},
+									"CreatedByGUID": {
+										"value": "@variables('CreatedByGUID')",
+										"type": "Expression"
+									}
+								}
+							}
+						},
+						{
+							"name": "Execute Pipeline Orchestrator Incidents",
+							"type": "ExecutePipeline",
+							"dependsOn": [
+								{
+									"activity": "Execute Pipeline Orchestrator Migrate Single Portal",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Orchestrator Incidents",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"rp_db_name": {
+										"value": "@item().dbName",
+										"type": "Expression"
+									},
+									"rp_server_name": {
+										"value": "@pipeline().parameters.rp_server_name",
+										"type": "Expression"
+									},
+									"preparisBaseURL": {
+										"value": "@pipeline().parameters.preparisBaseURL",
+										"type": "Expression"
+									},
+									"preparisDeviceIdAsBase64": {
+										"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+										"type": "Expression"
+									},
+									"folderName": "Incidents",
+									"rpBaseURL": {
+										"value": "@pipeline().parameters.rpBaseURL",
+										"type": "Expression"
+									},
+									"rpRestUserPassword": {
+										"value": "@item().rpRestUserPassword",
+										"type": "Expression"
+									},
+									"rpRestUserName": {
+										"value": "@item().rpRestUserName",
+										"type": "Expression"
+									}
+								}
+							}
+						},
+						{
+							"name": "Execute Pipeline Orchestrator Plans",
+							"type": "ExecutePipeline",
+							"dependsOn": [
+								{
+									"activity": "Execute Pipeline Orchestrator Migrate Single Portal",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Orchestrator Plans",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"rp_server_name": {
+										"value": "@pipeline().parameters.rp_server_name",
+										"type": "Expression"
+									},
+									"rp_db_name": {
+										"value": "@item().dbName",
+										"type": "Expression"
+									},
+									"preparisBaseURL": {
+										"value": "@pipeline().parameters.preparisBaseURL",
+										"type": "Expression"
+									},
+									"preparisDeviceIdAsBase64": {
+										"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+										"type": "Expression"
+									},
+									"baseFolderName": "Plans",
+									"rpBaseURL": {
+										"value": "@pipeline().parameters.rpBaseURL",
+										"type": "Expression"
+									},
+									"rpRestUserName": {
+										"value": "@item().rpRestUserName",
+										"type": "Expression"
+									},
+									"rpRestUserPassword": {
+										"value": "@item().rpRestUserPassword",
+										"type": "Expression"
+									}
+								}
+							}
+						},
+						{
+							"name": "Execute Pipeline Orchestrator Technologies",
+							"type": "ExecutePipeline",
+							"dependsOn": [
+								{
+									"activity": "Execute Pipeline Orchestrator Migrate Single Portal",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Orchestrator Technologies",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"rp_server_name": {
+										"value": "@pipeline().parameters.rp_server_name",
+										"type": "Expression"
+									},
+									"rp_db_name": {
+										"value": "@item().dbName",
+										"type": "Expression"
+									},
+									"CreatedByGUID": {
+										"value": "@variables('CreatedByGUID')",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"migrationConfig": {
+				"type": "object",
+				"defaultValue": {
+					"value": [
+						{
+							"dbName": "ftr",
+							"rpRestUserName": "RPSupport44695",
+							"rpRestUserPassword": "h65VRbOh:=^"
+						}
+					]
+				}
+			},
+			"rpBaseURL": {
+				"type": "string",
+				"defaultValue": "https://rpx-services.recoveryplanner.us/rpx-rest/"
+			},
+			"preparisDeviceIdAsBase64": {
+				"type": "string",
+				"defaultValue": "ZGV2"
+			},
+			"preparisBaseURL": {
+				"type": "string",
+				"defaultValue": "https://dev-main-core.preparisapp.com/"
+			},
+			"rp_server_name": {
+				"type": "string",
+				"defaultValue": "recovery-planner-mysql-server.mysql.database.azure.com"
+			}
+		},
+		"variables": {
+			"CreatedByGUID": {
+				"type": "String",
+				"defaultValue": "7b5ea827-bcd7-4a8a-8807-fc7e94a93455"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-26T09:35:03Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

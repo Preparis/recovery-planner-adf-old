@@ -1,0 +1,146 @@
+{
+	"name": "Migrate Technologies",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup migration_technology_data",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": {
+							"value": "select \ntechnologyId\n, replace(name, '''','''''') as name\n, cast(rpoTime as unsigned) rpoTime\n, cast(rpoTimeInSeconds as unsigned) as rpoTimeInSeconds\n, preparisTimeDurationUnitId \nfrom migration_technology_data\nwhere row_num between @{pipeline().parameters.iterationStart} and @{pipeline().parameters.iterationStop}\n\n",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach Migration Technology Iteration",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup migration_technology_data",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup migration_technology_data').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Append variable technology_insert_statements",
+							"type": "AppendVariable",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "technology_insert_statements",
+								"value": {
+									"value": "INSERT INTO [dbo].[bcTechnology]\n           ([technologyId]\n           ,[technologyName]\n           ,[portalId]\n           ,[technologyStatusTypeId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[modifiedById]\n           ,[rpoTime]\n           ,[rpoTimeInSeconds]\n           ,[rpoTimeDurationUnitId])\nSELECT \n    '@{item().technologyId}'\n    , '@{item().name}'\n    , '@{pipeline().parameters.portalEntityId}'\n    , '9255219C-A219-4F5B-9AB2-130289FDBB92'\n    , CURRENT_TIMESTAMP\n    , '@{pipeline().parameters.CreatedByGUID}'\n    , CURRENT_TIMESTAMP\n    , '@{pipeline().parameters.CreatedByGUID}'\n    , case when '@{item().rpoTime}' = '' then NULL else '@{item().rpoTime}' end\n    , case when '@{item().rpoTimeInSeconds}' = '' then NULL else '@{item().rpoTimeInSeconds}' end\n    , case when '@{item().preparisTimeDurationUnitId}' = '' then NULL else '@{item().preparisTimeDurationUnitId}' end",
+									"type": "Expression"
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Bulk Insert",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "ForEach Migration Technology Iteration",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "@join(variables('technology_insert_statements'),';')",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			}
+		],
+		"parameters": {
+			"rp_server_name": {
+				"type": "string"
+			},
+			"rp_db_name": {
+				"type": "string"
+			},
+			"portalEntityId": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			},
+			"iterationStart": {
+				"type": "int"
+			},
+			"iterationStop": {
+				"type": "int"
+			}
+		},
+		"variables": {
+			"technology_insert_statements": {
+				"type": "Array"
+			}
+		},
+		"folder": {
+			"name": "Vendors and Technologies"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T12:51:03Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

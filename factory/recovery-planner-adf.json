@@ -1,0 +1,9 @@
+{
+	"name": "recovery-planner-adf",
+	"location": "eastus2",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "ad7df217-1146-431f-9157-ff893fd8d98f",
+		"tenantId": "ba7dc9a5-0d52-47d9-8449-011961502df5"
+	}
+}

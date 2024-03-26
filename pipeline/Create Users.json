@@ -1,0 +1,199 @@
+{
+	"name": "Create Users",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get Recovery Planner Users",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": {
+							"value": "select \n newUserId\n, replace(username, '''','''''') username\n, password\n, userStateId\n, entityUserItemId\n, employeeID\nfrom migration_user_data\nwhere row_num between @{pipeline().parameters.iteration_start} and @{pipeline().parameters.iteration_stop}",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach Recovery Planner User",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Get Recovery Planner Users",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Get Recovery Planner Users').output.value",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "Append variable security_user_insert_statements",
+							"type": "AppendVariable",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "security_user_insert_statements",
+								"value": {
+									"value": "INSERT INTO [dbo].[azstudioSecurityUsers]\n           ([userId]\n           ,[userName]\n           ,[passwordHash]\n           ,[userStateId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[passwordResetRequired]\n           ,[lat]\n           ,[lng]\n           ,[consecutiveFailedLoginAttempts]\n           ,[dateTimePasswordLockout]\n           ,[externalSystemId]\n           ,[timeZoneId]\n           ,[seed]\n           ,[isFullyMigrated]\n           ,[isSelfRegistered]\n           ,[dateTimePasswordLastModified])\nVALUES (\n\t'@{item().newUserId}' \n\t, '@{item().username}'\n\t, '@{item().password}'\n\t, '@{item().userStateId}'\n\t, CURRENT_TIMESTAMP\n\t, '@{pipeline().parameters.CreatedByGUID}'\n\t, CURRENT_TIMESTAMP\n\t, '@{pipeline().parameters.CreatedByGUID}'\n\t, 1\n\t, NULL\n\t, NULL\n\t, 0 \n\t, NULL\n\t, '@{item().employeeID}' \n\t, NULL\n\t, NULL\n\t, NULL\n\t, 0\n\t, CURRENT_TIMESTAMP\n)",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Append variable entity_user_insert_statements_copy1",
+							"type": "AppendVariable",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "entity_user_insert_statements",
+								"value": {
+									"value": "INSERT INTO [dbo].[azstudioEntityUsers]\n           ([entityUserItemId]\n           ,[entityId]\n           ,[userId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[isPrimaryRelationship]\n           ,[isManager])\n     VALUES\n           ('@{item().entityUserItemId}'\n           ,'@{pipeline().parameters.PortalEntityID}'\n           ,'@{item().newUserId}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,0\n           ,NULL)",
+									"type": "Expression"
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Bulk Insert Security Users",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "ForEach Recovery Planner User",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "@join(variables('security_user_insert_statements'),';')",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "Bulk Insert Entity Users",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "Bulk Insert Security Users",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "@join(variables('entity_user_insert_statements'),';')",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			}
+		],
+		"parameters": {
+			"PortalEntityID": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			},
+			"db_name": {
+				"type": "string"
+			},
+			"db_server": {
+				"type": "string"
+			},
+			"iteration_start": {
+				"type": "int"
+			},
+			"iteration_stop": {
+				"type": "int"
+			}
+		},
+		"variables": {
+			"security_user_insert_statements": {
+				"type": "Array"
+			},
+			"entity_user_insert_statements": {
+				"type": "Array"
+			}
+		},
+		"folder": {
+			"name": "Users"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T14:09:23Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

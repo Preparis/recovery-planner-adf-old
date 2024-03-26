@@ -1,0 +1,329 @@
+{
+	"name": "Get RP Plan Data",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get PlanPrint OutputOptions",
+				"type": "WebActivity",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"method": "GET",
+					"headers": {
+						"Content-Type": "application/json",
+						"Rpxsession-Id": {
+							"value": "@pipeline().parameters.rpSessionToken",
+							"type": "Expression"
+						},
+						"Rpxclient-Id": {
+							"value": "@pipeline().parameters.rpClientId",
+							"type": "Expression"
+						}
+					},
+					"url": {
+						"value": "@{pipeline().parameters.rpBaseURL}plan-print/@{pipeline().parameters.planId}/output-options",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set variable printPreviewOutputOptions",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get PlanPrint OutputOptions",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "printPreviewOutputOptions",
+					"value": {
+						"value": "@string(activity('Get PlanPrint OutputOptions').output)",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Get PlanComponents",
+				"type": "WebActivity",
+				"dependsOn": [
+					{
+						"activity": "Set variable printPreviewOutputOptions",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"method": "GET",
+					"headers": {
+						"Content-Type": "application/json",
+						"Rpxsession-Id": {
+							"value": "@pipeline().parameters.rpSessionToken",
+							"type": "Expression"
+						},
+						"Rpxclient-Id": {
+							"value": "@pipeline().parameters.rpClientId",
+							"type": "Expression"
+						}
+					},
+					"url": {
+						"value": "@{pipeline().parameters.rpBaseURL}plans/@{pipeline().parameters.planId}/plan-components?show-appendices=true",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "ForEach PlanComponent",
+				"type": "ForEach",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Transform Response",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Transform Response').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Append variable nodeArray",
+							"type": "AppendVariable",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "nodeArray",
+								"value": {
+									"value": "@item().payload",
+									"type": "Expression"
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Set PipelineReturnVariable",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "ForEach PlanComponent",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "Azure Function GeneratePlanPrintNodesDTO",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "pipelineReturnValue",
+					"value": [
+						{
+							"key": "postBody",
+							"value": {
+								"type": "Expression",
+								"content": "{\n  \"planPrintNodesDTO\": @{json(activity('Azure Function GeneratePlanPrintNodesDTO').output.response)}, \n  \"printPreviewOutputOptions\":@{variables('printPreviewOutputOptions')}\n}"
+							}
+						}
+					],
+					"setSystemVariable": true
+				}
+			},
+			{
+				"name": "Create Response Table",
+				"type": "Lookup",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Get PlanComponents",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": {
+							"value": "drop table if exists migration_plan_components;\n\ncreate table migration_plan_components (\n    plan_id int UNSIGNED NOT NULL,\n    plan_component json NOT NULL\n);\n\ninsert into migration_plan_components\nselect @{pipeline().parameters.planId}\n, '@{activity('Get PlanComponents').output}';\n\n\nselect 'DONE' as table_created;",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Transform Response",
+				"type": "Lookup",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Create Response Table",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "DROP FUNCTION IF EXISTS PlanChildJSON;\r\n\r\nCREATE FUNCTION PlanChildJSON\r\n(id INT, type VARCHAR(50), children JSON)\r\nRETURNS JSON \r\nBEGIN\r\n    DECLARE node JSON;\r\n    SET node = (select JSON_OBJECT('node', JSON_OBJECT('id', id), 'type', UPPER(type), 'children', children, 'selected', 'true'));\r\n    RETURN node;\r\nEND;\r\n\r\nSET SESSION group_concat_max_len = 1000000;\r\n\r\ndrop table if exists migration_plan_child_hierarchy;\r\n\r\ncreate table migration_plan_child_hierarchy as (\r\n    with RECURSIVE child_hierarchy as (\r\n        select \r\n        root.*\r\n        from migration_plan_components,\r\n        JSON_TABLE(plan_component , '$.children[*]' COLUMNS(\r\n            id int PATH '$.id',\r\n            type varchar(50) PATH '$.type',\r\n            children json PATH '$.children',\r\n            parent_id int PATH '$.parent.id')\r\n        ) root\r\n        where root.type != 'root_appendix'\r\n\r\n        UNION\r\n\r\n        select child.*\r\n        from child_hierarchy ch \r\n        join JSON_TABLE(children , '$[*]' COLUMNS(\r\n            id int PATH '$.id',\r\n            type varchar(50) PATH '$.type',\r\n            children json PATH '$.children',\r\n            parent_id int PATH '$.parent.id')\r\n        ) as child on child.parent_id = ch.id\r\n\r\n    )\r\n\r\n    select * from child_hierarchy\r\n);\r\n\r\n\r\nwith recursive child_hierarchy_info as (\r\n\r\n    select id, type, children, parent_id\r\n    , 2 as level \r\n    , concat(cast(parent_id as char(1000)),'.', cast(id as char(1000))) as hierarchy_string \r\n    , json_length(children)\r\n    , case when json_length(children) = 0 then PlanChildJSON(id, type, children) end as child\r\n    from migration_plan_child_hierarchy\r\n    where parent_id = (select plan_id from migration_plan_components)\r\n\r\n    union all\r\n\r\n    select pch.id, pch.type, pch.children, pch.parent_id \r\n    , rch.level + 1 as level\r\n    , concat(hierarchy_string, '.', cast(pch.id as char(10)))  as hierarchy_string \r\n    , json_length(pch.children)\r\n    , case when json_length(pch.children) = 0 then PlanChildJSON(pch.id, pch.type, pch.children) end as child\r\n    from child_hierarchy_info rch\r\n    join migration_plan_child_hierarchy pch on pch.parent_id = rch.id\r\n)\r\n, leaf_nodes as (\r\n    select * from child_hierarchy_info where child is not null order by level, parent_id\r\n)\r\n\r\n, parent_nodes as (\r\n    select * from child_hierarchy_info where child is null order by level, parent_id\r\n)\r\n\r\n\r\n, parent_node_with_child as (\r\n    select p.id, p.parent_id, p.type, l.child\r\n    from parent_nodes p\r\n    left join leaf_nodes l on p.id = l.parent_id\r\n)\r\n\r\n, child_nodes_with_children as (\r\n    select c.id child_id, PlanChildJSON(c.id, c.type, concat('[',group_concat(c.child), ']')) children \r\n    from parent_node_with_child p\r\n    join parent_node_with_child c on p.id = c.parent_id\r\n    where p.child is null\r\n    group by c.id, c.type\r\n)\r\n\r\n, painful_nodes_with_children as(\r\n    select distinct p.id, PlanChildJSON(p.id, p.type, concat('[', cnwc.children , ']')) children \r\n    from parent_node_with_child p\r\n    join parent_node_with_child c on p.id = c.parent_id\r\n    join child_nodes_with_children cnwc on cnwc.child_id = c.id\r\n)\r\n, parent_nodes_with_children as(\r\n    select pnwc.id, PlanChildJSON(pnwc.id, pnwc.type, concat('[',group_concat(pnwc.child), ']')) children \r\n    from parent_node_with_child pnwc\r\n    left join child_nodes_with_children cnwc on pnwc.id = cnwc.child_id\r\n    where pnwc.child is not null\r\n    and cnwc.child_id is null\r\n    group by pnwc.id, pnwc.type\r\n) \r\n, all_nodes_with_children as (\r\n    select * from painful_nodes_with_children\r\n    union\r\n    select * from parent_nodes_with_children\r\n)\r\n, root_nodes_without_children as (\r\n    select id, child \r\n    from leaf_nodes \r\n    where parent_id = (select plan_id from migration_plan_components)\r\n)\r\n\r\n select child as payload from root_nodes_without_children\r\n union\r\n select children as payload from all_nodes_with_children",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Azure Function GeneratePlanPrintNodesDTO",
+				"type": "AzureFunctionActivity",
+				"dependsOn": [
+					{
+						"activity": "Get PlanComponents",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"functionName": "GeneratePlanPrintNodesDTO",
+					"method": "POST",
+					"body": {
+						"value": "@activity('Get PlanComponents').output",
+						"type": "Expression"
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "AzureFunction_GeneratePlanPrintNodesDTO",
+					"type": "LinkedServiceReference"
+				}
+			}
+		],
+		"parameters": {
+			"rpSessionToken": {
+				"type": "string"
+			},
+			"rpClientId": {
+				"type": "string"
+			},
+			"planId": {
+				"type": "string"
+			},
+			"rpBaseURL": {
+				"type": "string"
+			},
+			"rp_server_name": {
+				"type": "string"
+			},
+			"rp_db_name": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"printPreviewOutputOptions": {
+				"type": "String"
+			},
+			"nodeArray": {
+				"type": "Array"
+			}
+		},
+		"folder": {
+			"name": "Plans"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T18:46:20Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

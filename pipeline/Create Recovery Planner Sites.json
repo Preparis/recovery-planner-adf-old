@@ -1,0 +1,140 @@
+{
+	"name": "Create Recovery Planner Sites",
+	"properties": {
+		"activities": [
+			{
+				"name": "Step through JSON sites",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Set variable1",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@pipeline().parameters.json_data",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Set Select Statement",
+							"type": "SetVariable",
+							"dependsOn": [],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "select_statement_debug",
+								"value": {
+									"value": "SELECT '@{json(item()).newUserId}' as newUserId",
+									"type": "Expression"
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Set variable1",
+				"type": "SetVariable",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "step1",
+					"value": {
+						"value": "@split(replace(replace(replace(pipeline().parameters.json_string, '[', ''),']',''),'},','}},'),'},')",
+						"type": "Expression"
+					}
+				}
+			}
+		],
+		"parameters": {
+			"json_data": {
+				"type": "array",
+				"defaultValue": [
+					[
+						{
+							"siteFax": "",
+							"siteZip": null,
+							"siteCity": "TBD",
+							"siteName": "Test Alt Site",
+							"newUserId": "83e9a761-c4fa-11ee-b23f-6045bd7c0953",
+							"siteState": null,
+							"siteRegion": null,
+							"primarySite": 1,
+							"siteAddress": "TBD",
+							"siteCountry": 2,
+							"siteAddress2": null,
+							"siteLatitude": "",
+							"siteLongitude": "",
+							"siteDescription": null,
+							"sitePhoneNumber": "",
+							"siteGeneralEmail": null,
+							"newSiteLocationId": "83ef4ff2-c4fa-11ee-b23f-6045bd7c0953"
+						},
+						{
+							"siteFax": "",
+							"siteZip": "06611",
+							"siteCity": "Trumbull",
+							"siteName": "Main Site (1)",
+							"newUserId": "83e9a761-c4fa-11ee-b23f-6045bd7c0953",
+							"siteState": "CT",
+							"siteRegion": null,
+							"primarySite": 1,
+							"siteAddress": "101 Merritt Blvd.",
+							"siteCountry": 2,
+							"siteAddress2": null,
+							"siteLatitude": "41.23933",
+							"siteLongitude": "-73.14601",
+							"siteDescription": null,
+							"sitePhoneNumber": "+1 (203) 455-9990",
+							"siteGeneralEmail": null,
+							"newSiteLocationId": "83ef5074-c4fa-11ee-b23f-6045bd7c0953"
+						}
+					]
+				]
+			},
+			"PortalEntityID": {
+				"type": "string",
+				"defaultValue": "1234567"
+			},
+			"json_string": {
+				"type": "string",
+				"defaultValue": "\"[{\\\"siteFax\\\": \\\"\\\", \\\"siteZip\\\": \\\"46601\\\", \\\"siteCity\\\": \\\"South Bend\\\", \\\"siteName\\\": \\\"Site B\\\", \\\"newUserId\\\": \\\"1c0166b7-c536-11ee-b23f-6045bd7c0953\\\", \\\"siteState\\\": \\\"Indiana\\\", \\\"siteRegion\\\": \\\"North America\\\", \\\"primarySite\\\": 1, \\\"siteAddress\\\": \\\"201 Chapin St\\\", \\\"siteCountry\\\": 2, \\\"siteAddress2\\\": null, \\\"siteLatitude\\\": \\\"41.6747639\\\", \\\"siteLongitude\\\": \\\"-86.2619656\\\", \\\"siteDescription\\\": null, \\\"sitePhoneNumber\\\": \\\"1 16551927\\\", \\\"siteGeneralEmail\\\": \\\"TestEmail3@aol.com\\\", \\\"newEnitiyId_Location\\\": \\\"1c034019-c536-11ee-b23f-6045bd7c0953\\\"}]\""
+			}
+		},
+		"variables": {
+			"select_statement_debug": {
+				"type": "String"
+			},
+			"entityType_Location": {
+				"type": "String",
+				"defaultValue": "2067409a-be15-492c-8954-9d76e8d8a140"
+			},
+			"json_array": {
+				"type": "Array"
+			},
+			"step1": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "Backup"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-02-09T11:38:28Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

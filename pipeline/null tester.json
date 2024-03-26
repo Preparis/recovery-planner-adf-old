@@ -1,0 +1,71 @@
+{
+	"name": "null tester",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup null value",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select null as test_value;",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": "marshall",
+							"server_name": "recovery-planner-mysql-server.mysql.database.azure.com"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Set variable anything",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Lookup null value",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "anything",
+					"value": {
+						"value": "@activity('Lookup null value').output.value[0].test_value",
+						"type": "Expression"
+					}
+				}
+			}
+		],
+		"variables": {
+			"anything": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "Testers and Misc"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-21T10:38:48Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

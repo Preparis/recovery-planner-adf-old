@@ -1,0 +1,374 @@
+{
+	"name": "Create Preparis Users_copy1",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get Recovery Planner Users",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "ForEach Entity RoleBundle",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select * from migration_user_data;\n",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Set variable RecoveryPlannerUsers",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get Recovery Planner Users",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "RecoveryPlannerUsers",
+					"value": {
+						"value": "@activity('Get Recovery Planner Users').output.value",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "ForEach Recovery Planner User",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Set variable RecoveryPlannerUsers",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@variables('RecoveryPlannerUsers')",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "create new SecurityUser",
+							"type": "Script",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[azstudioSecurityUsers]\n           ([userId]\n           ,[userName]\n           ,[passwordHash]\n           ,[userStateId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[passwordResetRequired]\n           ,[lat]\n           ,[lng]\n           ,[consecutiveFailedLoginAttempts]\n           ,[dateTimePasswordLockout]\n           ,[externalSystemId]\n           ,[timeZoneId]\n           ,[seed]\n           ,[isFullyMigrated]\n           ,[isSelfRegistered]\n           ,[dateTimePasswordLastModified])\nSELECT '@{item().newUserId}' as newUserId\n, '@{item().username}' as username\n, '@{item().password}' as password\n, case \n    when '@{item().role}' = 'LISTED' or '@{item().username}' = '' then '@{variables('userStateId_Active')}' \n    when '@{item().status}' = 'INACTIVE' then '@{variables('userStateId_inActive')}'\n    else '@{variables('userStateId_Pending')}' \n    end as userStateId\n, CURRENT_TIMESTAMP as dateTimeCreated\n, '@{pipeline().parameters.CreatedByGUID}' as createdById\n, CURRENT_TIMESTAMP as dateTimeLastModified\n, '@{pipeline().parameters.CreatedByGUID}' as lastModifiedById\n, 1 as passwordResetRequired\n, NULL as lat\n, NULL as lng\n, 0 as consecutiveFailedLoginAttempts\n, CURRENT_TIMESTAMP as dateTimePasswordLockout\n, '@{item().externalId}' as externalSystemId\n, NULL as timeZoneId\n, NULL as seed\n, NULL as isFullyMigrated\n, 0 as isSelfRegistered\n, CURRENT_TIMESTAMP as dateTimePasswordLastModified",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						},
+						{
+							"name": "Create EntityUser",
+							"type": "Script",
+							"dependsOn": [
+								{
+									"activity": "create new SecurityUser",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[azstudioEntityUsers]\n           ([entityUserItemId]\n           ,[entityId]\n           ,[userId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[isPrimaryRelationship]\n           ,[isManager])\n     VALUES\n           ('@{item().entityUserItemId_portal}'\n           ,'@{pipeline().parameters.PortalEntityID}'\n           ,'@{item().newUserId}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,0\n           ,NULL)",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						},
+						{
+							"name": "Create UserProfile",
+							"type": "Script",
+							"dependsOn": [
+								{
+									"activity": "Create EntityUser",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[ppuserUserProfile]\n           ([userProfileId]\n           ,[userId]\n           ,[firstName]\n           ,[lastName]\n           ,[pin]\n           ,[title]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[floors]\n           ,[rolesChanged]\n           ,[userStringLanguageId])\n     VALUES\n           ('@{item().userProfileId}'\n           ,'@{item().newUserId}'\n           ,'@{item().firstName}'\n           ,'@{item().lastName}'\n           ,'@{item().pin}'\n           ,'@{item().title}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,NULL\n           ,NULL\n           ,NULL)",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						},
+						{
+							"name": "Create RoleBundleUser",
+							"type": "Script",
+							"dependsOn": [
+								{
+									"activity": "Create UserProfile",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[azstudioSecurityRoleBundleUsers]\n           ([userId]\n           ,[roleBundleId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById])\nSELECT \n\t'@{item().newUserId}' as userId\n    , case '@{item().role}' \n\t\twhen 'LISTED' then '@{variables('roleBundleId_MessageOnly')}'\n\t\telse '@{variables('roleBundleId_Employee')}'\n\t  end as roleBundleId\n    ,CURRENT_TIMESTAMP as dateTimeCreated\n    ,'@{pipeline().parameters.CreatedByGUID}'as createdById\n    ,CURRENT_TIMESTAMP as dateTimeLastModified\n    ,'@{pipeline().parameters.CreatedByGUID}' as lastModifiedById",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lookup RoleBundleIds",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "SELECT e.entityId, e.entityName\n, rb.roleBundleId\n, rb.roleBundleName\nfrom  azstudioEntityEntities e\nJOIN azstudioEntityEntityTypes et on e.entityTypeId = et.entityTypeId\nJOIN azstudioEntityStatusTypes st on e.entityStatusTypeId = st.entityStatusTypeId\nJOIN azstudioSecurityRoleBundles rb on e.entityId = rb.entityId \nwhere e.entityId = '@{pipeline().parameters.PortalEntityID}'",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "Preparis",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach Entity RoleBundle",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup RoleBundleIds",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup RoleBundleIds').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Switch1",
+							"type": "Switch",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"on": {
+									"value": "@item().roleBundleName",
+									"type": "Expression"
+								},
+								"cases": [
+									{
+										"value": "Employee",
+										"activities": [
+											{
+												"name": "Set variable roleBundleId_employee",
+												"type": "SetVariable",
+												"dependsOn": [],
+												"policy": {
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"variableName": "roleBundleId_Employee",
+													"value": {
+														"value": "@item().roleBundleId",
+														"type": "Expression"
+													}
+												}
+											}
+										]
+									},
+									{
+										"value": "Message Only",
+										"activities": [
+											{
+												"name": "Set variable roleBundleId_MessageOnly",
+												"type": "SetVariable",
+												"dependsOn": [],
+												"policy": {
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"variableName": "roleBundleId_MessageOnly",
+													"value": {
+														"value": "@item().roleBundleId",
+														"type": "Expression"
+													}
+												}
+											}
+										]
+									}
+								]
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"PortalEntityID": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"userStateId_Active": {
+				"type": "String",
+				"defaultValue": "c1ff019b-b3f6-411c-b04e-59294e9090fe"
+			},
+			"userStateId_Pending": {
+				"type": "String",
+				"defaultValue": "b5d6bc28-5e6d-4bd1-b028-f7e9a6c6b7a1"
+			},
+			"RecoveryPlannerUsers": {
+				"type": "Array"
+			},
+			"SelectString": {
+				"type": "String"
+			},
+			"userStateId_inActive": {
+				"type": "String",
+				"defaultValue": "ffb8849c-4dc6-4c66-9d00-f93ac2ef260b"
+			},
+			"roleBundleId_Employee": {
+				"type": "String"
+			},
+			"roleBundleId_MessageOnly": {
+				"type": "String"
+			},
+			"entityStatus_Pending": {
+				"type": "String",
+				"defaultValue": "45df2299-cc49-4d91-9a68-a391e009dbf3"
+			}
+		},
+		"folder": {
+			"name": "Backup"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-02-15T15:58:32Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

@@ -1,0 +1,70 @@
+{
+	"name": "DecodeErrorMessage",
+	"properties": {
+		"activities": [
+			{
+				"name": "Set variable ErrorMessage",
+				"type": "SetVariable",
+				"dependsOn": [],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "errorMessage",
+					"value": {
+						"value": "@base64ToString(variables('errorMessageEncoded'))",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set variable ErrorMessageToUser",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Set variable ErrorMessage",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "errorMessageToUser",
+					"value": {
+						"value": "@base64ToString(variables('errorMessageToUserEncoded'))",
+						"type": "Expression"
+					}
+				}
+			}
+		],
+		"variables": {
+			"errorMessageEncoded": {
+				"type": "String",
+				"defaultValue": "SW52YWxpZCB1c2VybmFtZSBvciBwYXNzd29yZA=="
+			},
+			"errorMessageToUserEncoded": {
+				"type": "String",
+				"defaultValue": "SW52YWxpZCB1c2VyIG5hbWUgb3IgcGFzc3dvcmQ="
+			},
+			"errorMessage": {
+				"type": "String"
+			},
+			"errorMessageToUser": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "Testers and Misc"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-13T10:07:39Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

@@ -1,0 +1,139 @@
+{
+	"name": "Create Post Portal and User entities",
+	"properties": {
+		"activities": [
+			{
+				"name": "Execute Pipeline Create User Meta Data",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create User Meta Data",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"PortalEntityID": {
+							"value": "@pipeline().parameters.PortalEntityID",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						},
+						"db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						},
+						"db_server": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Create Entity Users",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create Entity Users",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"PortalEntityID": {
+							"value": "@pipeline().parameters.PortalEntityID",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						},
+						"db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						},
+						"db_server": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Create Security Modules",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create Portal configuration post migration",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"PortalEntityID": {
+							"value": "@pipeline().parameters.PortalEntityID",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						},
+						"CompanyName": {
+							"value": "@pipeline().parameters.company_name",
+							"type": "Expression"
+						},
+						"mysql_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						},
+						"mysql_db_server": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						}
+					}
+				}
+			}
+		],
+		"parameters": {
+			"rp_server_name": {
+				"type": "string"
+			},
+			"rp_db_name": {
+				"type": "string"
+			},
+			"company_name": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			},
+			"DefaultLocationId": {
+				"type": "string"
+			},
+			"PortalEntityID": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "Portal"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T19:46:07Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

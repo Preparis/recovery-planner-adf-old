@@ -1,0 +1,844 @@
+{
+	"name": "Create User Meta Data",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup UserAddresses",
+				"type": "Lookup",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select \r\nnewAddressId\r\n, newUserId\r\n, replace(line1, '''','''''') line1\r\n, replace(line2, '''','''''') line2\r\n, replace(city, '''','''''') city\r\n, state\r\n, zip\r\n, CountryTypeId\r\n, latitude\r\n, longitude\r\n, userAddressTypeId\r\nfrom migration_userAddresses;",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach UserAddress",
+				"type": "ForEach",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Lookup UserAddresses",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup UserAddresses').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create UserAddresses",
+							"type": "Script",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[ppuserUserAddresses]\n           ([userAddressId]\n           ,[userId]\n           ,[userAddressTypeId]\n           ,[address1]\n           ,[address2]\n           ,[city]\n           ,[state]\n           ,[zip]\n           ,[countryTypeId]\n           ,[department]\n           ,[floor]\n           ,[additionalLocationInfo]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[lat]\n           ,[lng])\n     VALUES\n           ('@{item().newAddressId}'\n           ,'@{item().newUserId}'\n           ,'@{item().UserAddressTypeId}'\n           ,'@{item().line1}'\n           ,'@{item().line2}'\n           ,'@{item().city}'\n           ,'@{item().state}'\n           ,'@{item().zip}'\n           ,'@{item().CountryTypeId}'\n           ,NULL\n           ,NULL\n           ,NULL\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,'@{item().latitude}'\n           ,'@{item().longitude}'\n\t)",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lookup UserPhone Data",
+				"type": "Lookup",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select \r\nnewPhoneId\r\n, newUserId\r\n, phoneNumberTypeId\r\n, phoneNumberSubTypeId\r\n, phoneNumber\r\n, extension\r\nfrom migration_userPhones;",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach UserPhone",
+				"type": "ForEach",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Lookup UserPhone Data",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup UserPhone Data').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create UserPhoneNumbers",
+							"type": "Script",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[ppuserPhoneNumbers]\n           ([userPhoneId]\n           ,[userId]\n           ,[phoneNumberTypeId]\n           ,[phoneNumberSubTypeId]\n           ,[phoneNumber]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[extension]\n           ,[optOutSms]\n           ,[optOutVoice]\n           ,[isSMSVerified])\n     VALUES\n           ('@{item().newPhoneId}'\n           ,'@{item().newUserId}'\n           ,'@{item().phoneNumberTypeId}'\n           ,'@{item().phoneNumberSubTypeId}'\n           ,'@{item().phoneNumber}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           ,'@{item().extension}'\n           ,0\n           ,0\n           ,NULL\n)",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lookup UserEmails",
+				"type": "Lookup",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select \r\nnewEmailId\r\n, newUserId\r\n, emailAddressTypeId\r\n, replace(email, '''','''''') email\r\nfrom migration_userEmails;",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach UserEmail",
+				"type": "ForEach",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Lookup UserEmails",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup UserEmails').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create User Email",
+							"type": "Script",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[ppuserEMailAddresses]\n           ([userEMailId]\n           ,[userId]\n           ,[emailTypeId]\n           ,[emailAddress]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[optOutEmail])\n     VALUES\n           ('@{item().newEmailId}'\n           ,'@{item().newUserId}'\n           ,'@{item().emailAddressTypeId}'\n           ,'@{item().email}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           ,0)",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lookup RoleBundleIds",
+				"type": "Lookup",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "SELECT e.entityId, e.entityName\n, rb.roleBundleId\n, rb.roleBundleName\nfrom  azstudioEntityEntities e\nJOIN azstudioEntityEntityTypes et on e.entityTypeId = et.entityTypeId\nJOIN azstudioEntityStatusTypes st on e.entityStatusTypeId = st.entityStatusTypeId\nJOIN azstudioSecurityRoleBundles rb on e.entityId = rb.entityId \nwhere e.entityId = '@{pipeline().parameters.PortalEntityID}'",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "Preparis",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach Entity RoleBundle",
+				"type": "ForEach",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Lookup RoleBundleIds",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup RoleBundleIds').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Switch1",
+							"type": "Switch",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"on": {
+									"value": "@item().roleBundleName",
+									"type": "Expression"
+								},
+								"cases": [
+									{
+										"value": "Employee",
+										"activities": [
+											{
+												"name": "Set variable roleBundleId_employee",
+												"type": "SetVariable",
+												"dependsOn": [],
+												"policy": {
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"variableName": "roleBundleId_Employee",
+													"value": {
+														"value": "@item().roleBundleId",
+														"type": "Expression"
+													}
+												}
+											}
+										]
+									},
+									{
+										"value": "Message Only",
+										"activities": [
+											{
+												"name": "Set variable roleBundleId_MessageOnly",
+												"type": "SetVariable",
+												"dependsOn": [],
+												"policy": {
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"variableName": "roleBundleId_MessageOnly",
+													"value": {
+														"value": "@item().roleBundleId",
+														"type": "Expression"
+													}
+												}
+											}
+										]
+									},
+									{
+										"value": "Program Manager",
+										"activities": [
+											{
+												"name": "Set variable roleBundleId_Manager",
+												"type": "SetVariable",
+												"dependsOn": [],
+												"policy": {
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"variableName": "roleBundleId_ProgramManager",
+													"value": {
+														"value": "@item().roleBundleId",
+														"type": "Expression"
+													}
+												}
+											}
+										]
+									}
+								]
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lookup UserRole",
+				"type": "Lookup",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "ForEach Entity RoleBundle",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select \r\nnewUserId\r\n, role\r\nfrom migration_user_roleBundle",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach UserRole",
+				"type": "ForEach",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Lookup UserRole",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup UserRole').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create UserRoleBundle",
+							"type": "Script",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[azstudioSecurityRoleBundleUsers]\n           ([userId]\n           ,[roleBundleId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById])\nSELECT \n\t'@{item().newUserId}' as userId\n    , case '@{item().role}' \n\t\twhen 'LISTED' then '@{variables('roleBundleId_MessageOnly')}'\n    when 'ADMIN' then '@{variables('roleBundleId_ProgramManager')}'\n\t\telse '@{variables('roleBundleId_Employee')}'\n\t  end as roleBundleId\n    ,CURRENT_TIMESTAMP as dateTimeCreated\n    ,'@{pipeline().parameters.CreatedByGUID}'as createdById\n    ,CURRENT_TIMESTAMP as dateTimeLastModified\n    ,'@{pipeline().parameters.CreatedByGUID}' as lastModifiedById",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lookup UserProfile",
+				"type": "Lookup",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select \r\nuserProfileId\r\n, newUserId\r\n, replace(firstName, '''','''''') firstName\r\n, replace(lastName, '''','''''') lastName\r\n, pin\r\n, replace(title, '''','''''') title\r\nfrom migration_user_profile",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach UserProfile",
+				"type": "ForEach",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Lookup UserProfile",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup UserProfile').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create UserProfile",
+							"type": "Script",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[ppuserUserProfile]\n           ([userProfileId]\n           ,[userId]\n           ,[firstName]\n           ,[lastName]\n           ,[pin]\n           ,[title]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[floors]\n           ,[rolesChanged]\n           ,[userStringLanguageId])\n     VALUES\n           ('@{item().userProfileId}'\n           ,'@{item().newUserId}'\n           ,'@{item().firstName}'\n           ,'@{item().lastName}'\n           ,'@{item().pin}'\n           ,'@{item().title}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,NULL\n           ,NULL\n           ,NULL)",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Create azstudioSecurityRoleBundleRoles entry",
+				"type": "Script",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "ForEach UserRole",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "INSERT INTO [dbo].[azstudioSecurityRoleBundleRoles]\n           ([roleBundleId]\n           ,[roleId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById])\n     VALUES\n           ('@{variables('roleBundleId_ProgramManager')}'\n           ,'@{variables('BusinessContinuityManagerRoleId')}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           )",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "Execute Pipeline User Role Bundle Partitioned",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create User Role Bundle Partitioned",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"PortalEntityID": {
+							"value": "@pipeline().parameters.PortalEntityID",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						},
+						"db_name": {
+							"value": "@pipeline().parameters.db_name",
+							"type": "Expression"
+						},
+						"db_server": {
+							"value": "@pipeline().parameters.db_server",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline User Addresses Partitioned",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create User Addresses Partitioned",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"PortalEntityID": {
+							"value": "@pipeline().parameters.PortalEntityID",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						},
+						"rp_db_name": {
+							"value": "@pipeline().parameters.db_name",
+							"type": "Expression"
+						},
+						"rp_db_server": {
+							"value": "@pipeline().parameters.db_server",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline User Phone Number Partitioned_copy1",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create User Phone Numbers Partitioned",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"PortalEntityID": {
+							"value": "@pipeline().parameters.PortalEntityID",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						},
+						"rp_db_name": {
+							"value": "@pipeline().parameters.db_name",
+							"type": "Expression"
+						},
+						"rp_db_server": {
+							"value": "@pipeline().parameters.db_server",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline User Emails Partitioned",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create User Emails Partitioned",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"PortalEntityID": {
+							"value": "@pipeline().parameters.PortalEntityID",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						},
+						"rp_db_name": {
+							"value": "@pipeline().parameters.db_name",
+							"type": "Expression"
+						},
+						"rp_db_server": {
+							"value": "@pipeline().parameters.db_server",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline User Profiles Partitioned",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create User Profiles Partitioned",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"PortalEntityID": {
+							"value": "@pipeline().parameters.PortalEntityID",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						},
+						"rp_db_name": {
+							"value": "@pipeline().parameters.db_name",
+							"type": "Expression"
+						},
+						"rp_db_server": {
+							"value": "@pipeline().parameters.db_server",
+							"type": "Expression"
+						}
+					}
+				}
+			}
+		],
+		"parameters": {
+			"PortalEntityID": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			},
+			"db_name": {
+				"type": "string"
+			},
+			"db_server": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"UserPhoneNumberType_Office": {
+				"type": "String",
+				"defaultValue": "20509910-5326-4057-b21f-5c694b314692"
+			},
+			"UserPhoneNumberType_Personal": {
+				"type": "String",
+				"defaultValue": "5eec12d5-595f-4123-a613-c63e701ae993"
+			},
+			"roleBundleId_Employee": {
+				"type": "String"
+			},
+			"roleBundleId_MessageOnly": {
+				"type": "String"
+			},
+			"roleBundleId_ProgramManager": {
+				"type": "String"
+			},
+			"BusinessContinuityManagerRoleId": {
+				"type": "String",
+				"defaultValue": "a90d9a09-75cd-44d0-8ece-a04d873520ad"
+			}
+		},
+		"folder": {
+			"name": "Users"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T14:24:31Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

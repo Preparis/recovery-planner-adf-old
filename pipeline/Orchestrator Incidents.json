@@ -1,0 +1,481 @@
+{
+	"name": "Orchestrator Incidents",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup RP Events",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Set variable preparisFolderGuid whenFolderExists_copy1",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "with dupe_event_name as (\n    select name, count(id) \n    from t_event \n    where deleted = 0\n    group by name\n    having count(id) > 1\n)\n, dupe_event_data as (\n    select id\n    , CONCAT(e.name,'_', cast(DATE(creationTime) as char)) as name \n    , creationTime\n    , description\n    from t_event e\n    join dupe_event_name de on e.name = de.name\n    where e.deleted = 0\n)\n, no_dupe_event_data as (\n    select id\n    , e.name\n    , creationTime\n    , description\n    from t_event e\n    left join dupe_event_name de on e.name = de.name\n    where e.deleted = 0\n    and de.name is null\n)\n, unique_event_data as(\n    select * from dupe_event_data\n    UNION\n    select * from no_dupe_event_data\n)\n\nselect id\n, replace(name, '''','''''') name\n, creationTime\n, replace(description, '''','''''') description\nfrom unique_event_data\n",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach RP Event",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup RP Events",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup RP Events').output.value",
+						"type": "Expression"
+					},
+					"isSequential": true,
+					"activities": [
+						{
+							"name": "Script create ppdocsDocumentHistory",
+							"type": "Script",
+							"dependsOn": [
+								{
+									"activity": "Copy Document from RP to Blob",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO ppdocsDocumentHistory\n    (documentHistoryId,documentId,archivedDocumentId,documentHistoryEventTypeId,additionalDetails,dateTimeCreated,createdById)\nVALUES(\n    '@{guid()}'\n    ,'@{variables('thisDocumentId')}'\n    ,'@{guid()}'\n    ,'46004597-7A44-434C-9792-5B763FDA45BD'\n    ,'Migration from Recovery Planner'\n    ,GETDATE()\n    ,'@{activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisUserId}'\n)",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						},
+						{
+							"name": "Script Merge into ppdocsDocuments",
+							"type": "Script",
+							"dependsOn": [
+								{
+									"activity": "Script create ppdocsDocumentHistory",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "IF NOT EXISTS(SELECT 1 FROM ppdocsDocuments WHERE documentId = '@{variables('thisDocumentId')}') \nBEGIN\n  INSERT INTO ppdocsDocuments\n  (documentId,documentName,documentFileName,description,documentStateId,folderId,owningAccountId,sizeInBytes,versionInfo,tagsJson,metadataJson,dateTimeCreated,createdById)\n  VALUES\n  ('@{variables('thisDocumentId')}'\n  ,'@{item().name}'\n  ,'@{item().name}.pdf'\n  ,'@{item().description}'\n  ,'a615996c-640f-47d1-948a-4a3cb1bc7766'\n  ,'@{variables('preparisFolderGuid')}'\n  ,'@{activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisUserId}'\n  ,@{activity('Copy Document from RP to Blob').output.dataWritten}\n  ,null\n  ,NULL\n  ,NULL\n  ,CURRENT_TIMESTAMP\n  ,'@{activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisUserId}');\nEND\nELSE\nBEGIN\n  UPDATE ppdocsDocuments\n  SET documentName = '@{item().name}',\n        documentFileName = '@{item().name}.pdf',\n        description = '@{item().description}',\n        documentStateId = 'a615996c-640f-47d1-948a-4a3cb1bc7766',\n        folderId = '@{variables('preparisFolderGuid')}',\n        owningAccountId = '@{activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisUserId}',\n        sizeInBytes = @{activity('Copy Document from RP to Blob').output.dataWritten},\n        versionInfo = NULL,\n        tagsJson = NULL,\n        metadataJson = NULL,\n        lastModifiedById = '@{activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisUserId}',\n        dateTimeLastModified = CURRENT_TIMESTAMP\n  WHERE documentId = '@{variables('thisDocumentId')}'\nEND",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						},
+						{
+							"name": "Copy Document from RP to Blob",
+							"type": "Copy",
+							"dependsOn": [
+								{
+									"activity": "If Condition1",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "BinarySource",
+									"storeSettings": {
+										"type": "HttpReadSettings",
+										"requestMethod": "GET",
+										"additionalHeaders": {
+											"value": "Rpxsession-Id: @{activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.rpSessionToken}  \nRpxclient-Id: @{activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.rpClientId}",
+											"type": "Expression"
+										},
+										"requestTimeout": ""
+									},
+									"formatSettings": {
+										"type": "BinaryReadSettings"
+									}
+								},
+								"sink": {
+									"type": "BinarySink",
+									"storeSettings": {
+										"type": "AzureBlobStorageWriteSettings"
+									}
+								},
+								"enableStaging": false
+							},
+							"inputs": [
+								{
+									"referenceName": "Binary_RP_Incident",
+									"type": "DatasetReference",
+									"parameters": {
+										"eventId": {
+											"value": "@item().id",
+											"type": "Expression"
+										},
+										"rpBaseUrl": {
+											"value": "@pipeline().parameters.rpBaseURL",
+											"type": "Expression"
+										}
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "Binary_PreparisDocument",
+									"type": "DatasetReference",
+									"parameters": {
+										"documentIdGuid": {
+											"value": "@variables('thisDocumentId')",
+											"type": "Expression"
+										},
+										"fileName": {
+											"value": "@concat(item().name,'.pdf')",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "Lookup existing document",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "select documentId from ppdocsDocuments \nwhere documentName = '@{item().name}'\nand folderId = '@{variables('preparisFolderGuid')}'\nand documentStateId = 'a615996c-640f-47d1-948a-4a3cb1bc7766'\nand owningAccountId = '@{activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisUserId}'",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "Preparis",
+									"type": "DatasetReference"
+								},
+								"firstRowOnly": false
+							}
+						},
+						{
+							"name": "If Condition1",
+							"type": "IfCondition",
+							"dependsOn": [
+								{
+									"activity": "Lookup existing document",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"expression": {
+									"value": "@equals(activity('Lookup existing document').output.count,1)",
+									"type": "Expression"
+								},
+								"ifFalseActivities": [
+									{
+										"name": "Set variable thisDocumentId",
+										"type": "SetVariable",
+										"dependsOn": [],
+										"policy": {
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"variableName": "thisDocumentId",
+											"value": {
+												"value": "@{guid()}",
+												"type": "Expression"
+											}
+										}
+									}
+								],
+								"ifTrueActivities": [
+									{
+										"name": "Set variable thisDocumentId existing",
+										"type": "SetVariable",
+										"dependsOn": [],
+										"policy": {
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"variableName": "thisDocumentId",
+											"value": {
+												"value": "@activity('Lookup existing document').output.value[0].documentId",
+												"type": "Expression"
+											}
+										}
+									}
+								]
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Execute Pipeline Get or Replace Preparis Folder",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get Document Migration Objects",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get or Create Preparis Folder",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"preparisBaseURL": {
+							"value": "@pipeline().parameters.preparisBaseURL",
+							"type": "Expression"
+						},
+						"preparisDeviceIdAsBase64": {
+							"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+							"type": "Expression"
+						},
+						"preparisSessionToken": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisSessionToken",
+							"type": "Expression"
+						},
+						"entityId": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+							"type": "Expression"
+						},
+						"rootEntityId": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+							"type": "Expression"
+						},
+						"folderId": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisRootFolderId",
+							"type": "Expression"
+						},
+						"portalId": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisCurrentPortalId",
+							"type": "Expression"
+						},
+						"folderName": {
+							"value": "@pipeline().parameters.folderName",
+							"type": "Expression"
+						},
+						"parentFolderId": {
+							"value": "@activity('Execute Pipeline Get Document Migration Objects').output.pipelineReturnValue.preparisRootFolderId",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set variable preparisFolderGuid whenFolderExists_copy1",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get or Replace Preparis Folder",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "preparisFolderGuid",
+					"value": {
+						"value": "@activity('Execute Pipeline Get or Replace Preparis Folder').output.pipelineReturnValue.preparisFolderGuid",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Get Document Migration Objects",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get Document Migration Objects",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"rp_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						},
+						"rp_server_name": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						},
+						"preparisBaseURL": {
+							"value": "@pipeline().parameters.preparisBaseURL",
+							"type": "Expression"
+						},
+						"preparisDeviceIdAsBase64": {
+							"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+							"type": "Expression"
+						},
+						"rpBaseURL": {
+							"value": "@pipeline().parameters.rpBaseURL",
+							"type": "Expression"
+						},
+						"rpRestUserName": {
+							"value": "@pipeline().parameters.rpRestUserName",
+							"type": "Expression"
+						},
+						"rpRestUserPassword": {
+							"value": "@pipeline().parameters.rpRestUserPassword",
+							"type": "Expression"
+						}
+					}
+				}
+			}
+		],
+		"parameters": {
+			"rp_db_name": {
+				"type": "string",
+				"defaultValue": "amalgamatedlife"
+			},
+			"rp_server_name": {
+				"type": "string",
+				"defaultValue": "recovery-planner-mysql-server.mysql.database.azure.com"
+			},
+			"preparisBaseURL": {
+				"type": "string",
+				"defaultValue": "https://dev-main-core.preparisapp.com/"
+			},
+			"preparisDeviceIdAsBase64": {
+				"type": "string",
+				"defaultValue": "ZGV2"
+			},
+			"folderName": {
+				"type": "string",
+				"defaultValue": "Incidents"
+			},
+			"rpBaseURL": {
+				"type": "string",
+				"defaultValue": "https://rpx-services.recoveryplanner.us/rpx-rest/"
+			},
+			"rpRestUserPassword": {
+				"type": "string",
+				"defaultValue": "5K4awStPDA9b]l^DC"
+			},
+			"rpRestUserName": {
+				"type": "string",
+				"defaultValue": "RPSupport97495"
+			}
+		},
+		"variables": {
+			"preparisFolderGuid": {
+				"type": "String"
+			},
+			"thisDocumentId": {
+				"type": "String"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T17:08:35Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}
