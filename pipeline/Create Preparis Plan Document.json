@@ -1,0 +1,417 @@
+{
+	"name": "Create Preparis Plan Document",
+	"properties": {
+		"activities": [
+			{
+				"name": "Execute Pipeline Get RP Plan Data",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get RP Plan Data",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"rpSessionToken": {
+							"value": "@pipeline().parameters.rpSessionToken",
+							"type": "Expression"
+						},
+						"rpClientId": {
+							"value": "@pipeline().parameters.rpClientId",
+							"type": "Expression"
+						},
+						"planId": {
+							"value": "@pipeline().parameters.plan_id",
+							"type": "Expression"
+						},
+						"rpBaseURL": {
+							"value": "@pipeline().parameters.rpBaseURL",
+							"type": "Expression"
+						},
+						"rp_server_name": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						},
+						"rp_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set variable postBody",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get RP Plan Data",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "postBody",
+					"value": {
+						"value": "@activity('Execute Pipeline Get RP Plan Data').output.pipelineReturnValue.postBody",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "POST PlanPrint Tester",
+				"type": "WebActivity",
+				"state": "Inactive",
+				"onInactiveMarkAs": "Succeeded",
+				"dependsOn": [
+					{
+						"activity": "Set variable postBody",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"method": "POST",
+					"headers": {
+						"Content-Type": "application/json",
+						"Rpxsession-Id": {
+							"value": "@pipeline().parameters.rpSessionToken",
+							"type": "Expression"
+						},
+						"Rpxclient-Id": {
+							"value": "@pipeline().parameters.rpClientId",
+							"type": "Expression"
+						}
+					},
+					"url": {
+						"value": "@{pipeline().parameters.rpBaseURL}plan-print/@{pipeline().parameters.plan_id}?print-preview=false&output-format=MSWORD2007&bundled=true&draft=false",
+						"type": "Expression"
+					},
+					"body": {
+						"value": "@json(variables('postBody'))",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Copy Plan from RP to Blob",
+				"type": "Copy",
+				"dependsOn": [
+					{
+						"activity": "If Condition1",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "BinarySource",
+						"storeSettings": {
+							"type": "HttpReadSettings",
+							"requestMethod": "POST",
+							"additionalHeaders": {
+								"value": "Rpxsession-Id: @{pipeline().parameters.rpSessionToken}  \nRpxclient-Id: @{pipeline().parameters.rpClientId}  \nContent-Type: application/json  ",
+								"type": "Expression"
+							},
+							"requestBody": {
+								"value": "@variables('postBody')",
+								"type": "Expression"
+							},
+							"requestTimeout": ""
+						},
+						"formatSettings": {
+							"type": "BinaryReadSettings"
+						}
+					},
+					"sink": {
+						"type": "BinarySink",
+						"storeSettings": {
+							"type": "AzureBlobStorageWriteSettings"
+						}
+					},
+					"enableStaging": false
+				},
+				"inputs": [
+					{
+						"referenceName": "Binary_RecoveryPlannerPlan",
+						"type": "DatasetReference",
+						"parameters": {
+							"BaseURL": {
+								"value": "@pipeline().parameters.rpBaseURL",
+								"type": "Expression"
+							},
+							"PlanID": {
+								"value": "@{pipeline().parameters.plan_id}",
+								"type": "Expression"
+							}
+						}
+					}
+				],
+				"outputs": [
+					{
+						"referenceName": "Binary_PreparisDocument",
+						"type": "DatasetReference",
+						"parameters": {
+							"documentIdGuid": {
+								"value": "@variables('thisDocumentId')",
+								"type": "Expression"
+							},
+							"fileName": {
+								"value": "@concat(pipeline().parameters.plan_name,'.zip')",
+								"type": "Expression"
+							}
+						}
+					}
+				]
+			},
+			{
+				"name": "Lookup existing document",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "POST PlanPrint Tester",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "select documentId from ppdocsDocuments \nwhere documentName = '@{pipeline().parameters.plan_name}'\nand folderId = '@{pipeline().parameters.preparisFolderGuid}'\nand documentStateId = 'a615996c-640f-47d1-948a-4a3cb1bc7766'\nand owningAccountId = '@{pipeline().parameters.preparisUserId}'",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "Preparis",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "If Condition1",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "Lookup existing document",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@equals(activity('Lookup existing document').output.count,1)",
+						"type": "Expression"
+					},
+					"ifFalseActivities": [
+						{
+							"name": "Set variable thisDocumentId",
+							"type": "SetVariable",
+							"dependsOn": [],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "thisDocumentId",
+								"value": {
+									"value": "@{guid()}",
+									"type": "Expression"
+								}
+							}
+						}
+					],
+					"ifTrueActivities": [
+						{
+							"name": "Set variable thisDocumentId existing",
+							"type": "SetVariable",
+							"dependsOn": [],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "thisDocumentId",
+								"value": {
+									"value": "@activity('Lookup existing document').output.value[0].documentId",
+									"type": "Expression"
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Script create ppdocsDocumentHistory",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "Copy Plan from RP to Blob",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "INSERT INTO ppdocsDocumentHistory\n    (documentHistoryId,documentId,archivedDocumentId,documentHistoryEventTypeId,additionalDetails,dateTimeCreated,createdById)\nVALUES(\n    '@{guid()}'\n    ,'@{variables('thisDocumentId')}'\n    ,'@{guid()}'\n    ,'46004597-7A44-434C-9792-5B763FDA45BD'\n    ,'Migration from Recovery Planner'\n    ,GETDATE()\n    ,'@{pipeline().parameters.preparisUserId}'\n)",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "Script Merge into ppdocsDocuments",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "Script create ppdocsDocumentHistory",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "IF NOT EXISTS(SELECT 1 FROM ppdocsDocuments WHERE documentId = '@{variables('thisDocumentId')}') \nBEGIN\n  INSERT INTO ppdocsDocuments\n  (documentId,documentName,documentFileName,description,documentStateId,folderId,owningAccountId,sizeInBytes,versionInfo,tagsJson,metadataJson,dateTimeCreated,createdById)\n  VALUES\n  ('@{variables('thisDocumentId')}'\n  ,'@{pipeline().parameters.plan_name}'\n  ,'@{pipeline().parameters.plan_name}.zip'\n  ,NULL\n  ,'a615996c-640f-47d1-948a-4a3cb1bc7766'\n  ,'@{pipeline().parameters.preparisFolderGuid}'\n  ,'@{pipeline().parameters.preparisUserId}'\n  ,@{activity('Copy Plan from RP to Blob').output.dataWritten}\n  ,null\n  ,NULL\n  ,NULL\n  ,CURRENT_TIMESTAMP\n  ,'@{pipeline().parameters.preparisUserId}');\nEND\nELSE\nBEGIN\n  UPDATE ppdocsDocuments\n  SET documentName = '@{pipeline().parameters.plan_name}',\n        documentFileName = '@{pipeline().parameters.plan_name}.zip',\n        description = NULL,\n        documentStateId = 'a615996c-640f-47d1-948a-4a3cb1bc7766',\n        folderId = '@{pipeline().parameters.preparisFolderGuid}',\n        owningAccountId = '@{pipeline().parameters.preparisUserId}',\n        sizeInBytes = @{activity('Copy Plan from RP to Blob').output.dataWritten},\n        versionInfo = NULL,\n        tagsJson = NULL,\n        metadataJson = NULL,\n        lastModifiedById = '@{pipeline().parameters.preparisUserId}',\n        dateTimeLastModified = CURRENT_TIMESTAMP\n  WHERE documentId = '@{variables('thisDocumentId')}'\nEND",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			}
+		],
+		"parameters": {
+			"rpSessionToken": {
+				"type": "string"
+			},
+			"rpClientId": {
+				"type": "string"
+			},
+			"plan_id": {
+				"type": "string"
+			},
+			"rpBaseURL": {
+				"type": "string"
+			},
+			"rp_server_name": {
+				"type": "string"
+			},
+			"rp_db_name": {
+				"type": "string"
+			},
+			"preparisBaseURL": {
+				"type": "string"
+			},
+			"preparisDeviceIdAsBase64": {
+				"type": "string"
+			},
+			"preparisSessionToken": {
+				"type": "string"
+			},
+			"preparisCurrentPortalId": {
+				"type": "string"
+			},
+			"plan_name": {
+				"type": "string"
+			},
+			"preparisUserId": {
+				"type": "string"
+			},
+			"preparisFolderGuid": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"thisDocumentId": {
+				"type": "String"
+			},
+			"postBody": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "Plans"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-19T20:21:51Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

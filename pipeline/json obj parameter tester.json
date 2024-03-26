@@ -1,0 +1,90 @@
+{
+	"name": "json obj parameter tester",
+	"properties": {
+		"activities": [
+			{
+				"name": "ForEach1",
+				"type": "ForEach",
+				"dependsOn": [],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@pipeline().parameters.obj.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Set variable1",
+							"type": "SetVariable",
+							"dependsOn": [],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "newEmailId",
+								"value": {
+									"value": "@item().newEmailId",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Set variable1_copy1",
+							"type": "SetVariable",
+							"dependsOn": [],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "newUserId",
+								"value": {
+									"value": "@item().newUserId",
+									"type": "Expression"
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"obj": {
+				"type": "object",
+				"defaultValue": {
+					"value": [
+						{
+							"newEmailId": "48a47dc2-eae7-11ee-8102-6045bd7c0953",
+							"newUserId": "482b541d-eae7-11ee-8102-6045bd7c0953",
+							"emailAddressTypeId": "d2b1d156-bdf9-4223-9368-825a448025ad",
+							"email": "9175583867@vtext.com"
+						},
+						{
+							"newEmailId": "48a4829b-eae7-11ee-8102-6045bd7c0953",
+							"newUserId": "482b541d-eae7-11ee-8102-6045bd7c0953",
+							"emailAddressTypeId": "acb4f38f-3642-472a-8de2-dcead28584a2",
+							"email": "9175583867@vtext.com"
+						}
+					]
+				}
+			}
+		},
+		"variables": {
+			"newEmailId": {
+				"type": "String"
+			},
+			"newUserId": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "Testers and Misc"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T20:52:08Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

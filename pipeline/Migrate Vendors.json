@@ -1,0 +1,282 @@
+{
+	"name": "Migrate Vendors",
+	"properties": {
+		"activities": [
+			{
+				"name": "Build vendor migration tables",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "/* vendor and address */\r\ndrop table if exists migration_vendor_data;\r\n\r\ncreate table migration_vendor_data as (\r\n    with distinct_vendor_contract_data as (\r\n        select distinct v.id vendorId\r\n        , v.name as vendorName\r\n        , 'D355632B-46AB-4376-9591-318F44A505C1' as vendorStatusTypeId\r\n        , v.description as comments\r\n        , case when vc.expirationDate is null then NULL\r\n            else cast(vc.expirationDate as datetime) end as contractEndDate \r\n        , v.address\r\n        , v.address2\r\n        , v.city\r\n        , v.state\r\n        , v.zip\r\n        , v.mainNumber as phone\r\n        , v.url\r\n        , v.country_id\r\n        , c.name as rpCountryName\r\n        , pc.CountryTypeName\r\n        , pc.CountryTypeId\r\n        , 1 as isPrimary\r\n        from T_VENDOR v\r\n        /*join t_vendor_contact vc on v.id = vc.vendor_id*/\r\n        join t_country c on v.country_id = c.id\r\n        join migration_preparis_userCountry pc on pc.CountryTypeName = c.name\r\n        left join t_contract vc on v.id = vc.vendor_id\r\n        order by v.id\r\n    )\r\n    select *, (select uuid()) as newVendorId, (select uuid()) as newVendorAddressId\r\n    from distinct_vendor_contract_data\r\n);\r\n\r\n\r\n/*vendor contact */\r\ndrop table if exists migration_vendor_contact;\r\n\r\ncreate table migration_vendor_contact as (\r\n\r\n    with all_vendor_contacts as (\r\n        select \r\n        c.id contactId\r\n        , mvd.vendorId\r\n        , mvd.newVendorId\r\n        , (select uuid()) as newVendorContactId \r\n        , concat(c.firstname, ' ', c.lastname) as name \r\n        , (select min(cast(AES_DECRYPT(numberString, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255))) from t_contact_info where owner_id = c.id and  contact_info_type = 'PHONE') as phone\r\n        , (select min(email) from t_contact_info where owner_id = c.id and  contact_info_type = 'EMAIL') as email\r\n        from migration_vendor_data mvd\r\n        join t_vendor_contact vc on mvd.vendorId = vc.vendor_id\r\n        join t_contact c on vc.id = c.id\r\n        order by c.name\r\n    )\r\n    , vendor_primary_contact as (\r\n        select min(contactId) contactId, vendorId \r\n            from all_vendor_contacts\r\n        group by vendorId\r\n    )\r\n    select avc.* \r\n    , case when vpc.contactId is null then 0\r\n        else 1 \r\n        end as isPrimary\r\n    from all_vendor_contacts avc\r\n    left join vendor_primary_contact vpc on avc.contactId = vpc.contactId\r\n\r\n);\r\n\r\n\r\nselect 'tables created' as 'Lookup hack';",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach1",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup migration_vendor_data",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup migration_vendor_data').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create Preparis Vendor",
+							"type": "Script",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[bcVendor]\n           ([vendorId]\n           ,[vendorName]\n           ,[portalId]\n           ,[vendorStatusTypeId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[contactName]\n           ,[contactPhone]\n           ,[comments]\n           ,[contractStartDate]\n           ,[contractEndDate]\n           ,[documentFolderId])\nSELECT\n      '@{item().newVendorId}' \n      ,'@{item().vendorName}'\n      ,'@{pipeline().parameters.portalEntityId}'\n      ,'@{item().vendorStatusTypeId}'\n      ,CURRENT_TIMESTAMP\n      ,'@{pipeline().parameters.CreatedByGUID}'\n      ,CURRENT_TIMESTAMP\n      ,'@{pipeline().parameters.CreatedByGUID}'\n      ,NULL\n      ,NULL\n      ,case \n            when '@{item().comments}' = '' then null\n            else '@{item().comments}' \n            end\n      ,NULL\n      ,case \n            when '@{item().contractEndDate}' = '' then null\n            else '@{item().contractEndDate}' \n            end\n      ,NULL\n",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						},
+						{
+							"name": "Create Vendor Addresses",
+							"type": "Script",
+							"dependsOn": [
+								{
+									"activity": "Create Preparis Vendor",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[bcVendorAddress]\n           ([vendorAddressId]\n           ,[vendorId]\n           ,[address1]\n           ,[address2]\n           ,[city]\n           ,[state]\n           ,[zip]\n           ,[phone]\n           ,[url]\n           ,[countryTypeId]\n           ,[isPrimary]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById])\nSELECT \n      '@{item().newVendorAddressId}'\n      ,'@{item().newVendorId}'\n      ,'@{item().address}'\n      ,case \n            when '@{item().address2}' = '' then null\n            else '@{item().address2}' \n            end\n      ,'@{item().city}'\n      ,'@{item().state}'\n      ,'@{item().zip}'\n      ,case \n            when '@{item().phone}' = '' then null\n            else '@{item().phone}' \n            end\n      ,case \n            when '@{item().url}' = '' then null\n            else '@{item().url}' \n            end\n      ,'@{item().CountryTypeId}'\n      ,1\n      ,CURRENT_TIMESTAMP\n      ,'@{pipeline().parameters.CreatedByGUID}'\n      ,CURRENT_TIMESTAMP\n      ,'@{pipeline().parameters.CreatedByGUID}'\n",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lookup migration_vendor_data",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Build vendor migration tables",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select newVendorId\r\n, replace(vendorName, '''','''''') vendorName\r\n, vendorStatusTypeId\r\n, replace(comments, '''','''''') comments\r\n, contractEndDate  \r\n, newVendorAddressId\r\n, replace(address, '''','''''') address\r\n, replace(address2, '''','''''') address2\r\n, replace(city, '''','''''') city\r\n, state\r\n, zip\r\n, phone\r\n, url\r\n, CountryTypeId\r\n, isPrimary\r\nfrom migration_vendor_data;\r\n",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Lookup Vendor Contacts",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "ForEach1",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select \r\nnewVendorId\r\n, newVendorContactId\r\n, replace(name, '''','''''') name \r\n, phone\r\n, replace(email, '''','''''') email\r\n, isPrimary\r\nfrom migration_vendor_contact;",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach Vendor Contact",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup Vendor Contacts",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup Vendor Contacts').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create Vendor Contact",
+							"type": "Script",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[bcVendorContact]\n           ([vendorContactId]\n           ,[vendorId]\n           ,[name]\n           ,[email]\n           ,[phone]\n           ,[title]\n           ,[isPrimary]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById])\nSELECT\n      '@{item().newVendorContactId}'\n      ,'@{item().newVendorId}'\n      ,'@{item().name}'\n      ,case \n            when '@{item().email}' = '' then null\n            else '@{item().email}' \n            end      \n      ,case \n            when '@{item().phone}' = '' then null\n            else '@{item().phone}' \n            end  \n      ,NULL\n      , @{item().isPrimary}\n      , CURRENT_TIMESTAMP\n      , '@{pipeline().parameters.CreatedByGUID}'\n      , CURRENT_TIMESTAMP\n      , '@{pipeline().parameters.CreatedByGUID}'\n",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"rp_server_name": {
+				"type": "string"
+			},
+			"rp_db_name": {
+				"type": "string"
+			},
+			"portalEntityId": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "Vendors and Technologies"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T10:38:02Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

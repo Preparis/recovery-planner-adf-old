@@ -1,0 +1,575 @@
+{
+	"name": "Create Portal configuration post migration",
+	"properties": {
+		"activities": [
+			{
+				"name": "Create SecurityEntityModules",
+				"type": "Script",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "INSERT INTO [dbo].[azstudioSecurityEntityModules]\n           ([moduleId]\n           ,[entityId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById])\n     VALUES\n        (\n            '@{variables('Agility Risk GUID')}'\n            , '@{pipeline().parameters.PortalEntityID}'\n            , CURRENT_TIMESTAMP\n            , '@{pipeline().parameters.CreatedByGUID}'\n            , CURRENT_TIMESTAMP\n            , '@{pipeline().parameters.CreatedByGUID}'\n        )\n    ,   (\n            '@{variables('Agility Exercise Manager GUID')}'\n            , '@{pipeline().parameters.PortalEntityID}'\n            , CURRENT_TIMESTAMP\n            , '@{pipeline().parameters.CreatedByGUID}'\n            , CURRENT_TIMESTAMP\n            , '@{pipeline().parameters.CreatedByGUID}'\n        )\n    ,   (\n            '@{variables('Agility Planner GUID')}'\n            , '@{pipeline().parameters.PortalEntityID}'\n            , CURRENT_TIMESTAMP\n            , '@{pipeline().parameters.CreatedByGUID}'\n            , CURRENT_TIMESTAMP\n            , '@{pipeline().parameters.CreatedByGUID}'\n        )\n    ,   (\n            '@{variables('Incident Manager GUID')}'\n            , '@{pipeline().parameters.PortalEntityID}'\n            , CURRENT_TIMESTAMP\n            , '@{pipeline().parameters.CreatedByGUID}'\n            , CURRENT_TIMESTAMP\n            , '@{pipeline().parameters.CreatedByGUID}'\n        )",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "Create Portal Industry Entry",
+				"type": "Script",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "INSERT INTO [dbo].[bcPortalIndustry]\n           ([portalId]\n           ,[industryId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById])\n     VALUES\n        (\n            '@{pipeline().parameters.PortalEntityID}'\n            , '@{variables('bcIndustry Generic GUID')}'\n            , CURRENT_TIMESTAMP\n            , '@{pipeline().parameters.CreatedByGUID}'\n            , CURRENT_TIMESTAMP\n            , '@{pipeline().parameters.CreatedByGUID}'\n        )",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "Create bcSite",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "Set variable bcSite GUID",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "INSERT INTO [dbo].[bcSite]\n           ([siteId]\n           ,[siteName]\n           ,[portalId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[siteStatusTypeId]\n           ,[documentFolderId])\n     VALUES\n    (\n        '@{variables('bcSite GUID')}'\n        , '@{pipeline().parameters.CompanyName}'\n        , '@{pipeline().parameters.PortalEntityID}'\n        , CURRENT_TIMESTAMP\n        , '@{pipeline().parameters.CreatedByGUID}'\n        , CURRENT_TIMESTAMP\n        , '@{pipeline().parameters.CreatedByGUID}' \n        , '6D39FF0B-AFAC-45E8-BCB0-15673D70CE56'\n        , NULL\n    )",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "Set variable bcSite GUID",
+				"type": "SetVariable",
+				"dependsOn": [],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "bcSite GUID",
+					"value": {
+						"value": "@{guid()}",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Lookup PortalFunctionalArea Data",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Create bcSite",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select \r\nportalFunctionalAreaId\r\n, replace(portalFunctionalAreaName, '''','''''') portalFunctionalAreaName\r\n, leaderUserId\r\n, replace(portalFunctionalAreaDescription, '''','''''') portalFunctionalAreaDescription\r\n, bcPortalFunctionalAreaToDepartmentId\r\n, newDepartmentId\r\nfrom migration_PortalFunctionalArea_data;",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.mysql_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.mysql_db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach Functional Area",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup PortalFunctionalArea Data",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup PortalFunctionalArea Data').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create bcFunctionalArea",
+							"type": "Script",
+							"state": "Inactive",
+							"onInactiveMarkAs": "Succeeded",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[bcFunctionalArea]\n    ([functionalAreaId]\n    ,[functionalAreaName]\n    ,[industryId]\n    ,[dateTimeCreated]\n    ,[createdById]\n    ,[dateTimeLastModified]\n    ,[lastModifiedById]\n    ,[functionalAreaStatusTypeId]\n    ,[isHidden])\n     VALUES\n        ('@{item().functionalAreaId}'\n        ,'@{item().functionalAreaName}'\n        ,'@{variables('bcIndustry Generic GUID')}'\n        , CURRENT_TIMESTAMP\n        , '@{pipeline().parameters.CreatedByGUID}'\n        , CURRENT_TIMESTAMP\n        , '@{pipeline().parameters.CreatedByGUID}'\n        ,'aae1dff4-d206-4e72-ad0c-c64a30910d29'\n        ,0\n    )",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						},
+						{
+							"name": "Create bcPortalFunctionalArea",
+							"type": "Script",
+							"dependsOn": [
+								{
+									"activity": "Create bcFunctionalArea",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[bcPortalFunctionalArea]\n    ([portalFunctionalAreaId]\n    ,[portalId]\n    ,[portalFunctionalAreaName]\n    ,[functionalAreaId]\n    ,[dateTimeCreated]\n    ,[createdById]\n    ,[dateTimeLastModified]\n    ,[lastModifiedById]\n    ,[leaderUserId]\n    ,[portalFunctionalAreaStatusTypeId]\n    ,[siteId]\n    ,[documentFolderId]\n    ,[isHidden]\n    ,[portalFunctionalAreaDescription])\nSELECT\n        '@{item().portalFunctionalAreaId}' \n        ,'@{pipeline().parameters.PortalEntityID}'\n        , '@{item().portalFunctionalAreaName}'\n        , NULL\n        , CURRENT_TIMESTAMP\n        , '@{pipeline().parameters.CreatedByGUID}'\n        , CURRENT_TIMESTAMP\n        , '@{pipeline().parameters.CreatedByGUID}'\n        , NULL\n        , '5DCED3D8-305D-4D12-8558-BC4FADBFE3DE'\n        , '@{variables('bcSite GUID')}'\n        , NULL\n        , 0\n        , '@{item().portalFunctionalAreaDescription}'\n    ",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						},
+						{
+							"name": "Create bcPortalFunctionalAreaToDepartment",
+							"type": "Script",
+							"dependsOn": [
+								{
+									"activity": "Create bcPortalFunctionalArea",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[bcPortalFunctionalAreaToDepartment]\n           ([bcPortalFunctionalAreaToDepartmentId]\n           ,[portalFunctionalAreaId]\n           ,[departmentId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById])\n     VALUES\n           ('@{item().bcPortalFunctionalAreaToDepartmentId}'\n           ,'@{item().portalFunctionalAreaId}'\n           ,'@{item().newDepartmentId}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n        )",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lookup PortalProcessData",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "ForEach Functional Area",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select \nportalProcessId\n, portalFunctionalAreaId\n, replace(functionalAreaName, '''','''''') functionalAreaName\n, replace(portalFunctionalAreaDescription, '''','''''') portalFunctionalAreaDescription  \nfrom migration_PortalProcess_data;\n\n",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.mysql_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.mysql_db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach Portal Process",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup PortalProcessData",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup PortalProcessData').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create bcPortalProcess",
+							"type": "Script",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[bcPortalProcess]\n           ([portalProcessId]\n           ,[portalFunctionalAreaId]\n           ,[processId]\n           ,[portalProcessName]\n           ,[rtoImpactTimespanId]\n           ,[portalProcessStatusTypeId]\n           ,[responsibleUserId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[documentFolderId]\n           ,[isHidden]\n           ,[mtdImpactTimespanId]\n           ,[portalProcessDescription])\nVALUES (\n        '@{item().portalProcessId}' \n        , '@{item().portalFunctionalAreaId}'\n        , NULL\n        , '@{item().functionalAreaName}'\n        , NULL\n        , 'BCA9E36E-B82A-48D4-9DEF-B51A0114233E'\n        , NULL\n        , CURRENT_TIMESTAMP\n        , '@{pipeline().parameters.CreatedByGUID}'\n        , CURRENT_TIMESTAMP\n        , '@{pipeline().parameters.CreatedByGUID}'\n        , NULL\n        , 0\n        , NULL\n        , '@{item().portalFunctionalAreaDescription}'\n    )",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "create bcPortalPlanTypes",
+				"description": "e need to create a new entry in the the bcPortalPlanTypes table for the portal you created and for the Business Continuity plan type.",
+				"type": "Script",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "INSERT INTO [dbo].[bcPortalPlanTypes]\n           ([portalPlanTypeId]\n           ,[portalId]\n           ,[planTypeId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[portalPlanTypeStatusTypeId])\n     VALUES\n           (NEWID()\n           ,'@{pipeline().parameters.PortalEntityID}'\n           ,'b1bac3a9-992b-4bfe-adff-72bd9bfe6db6'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           ,'ab727771-44c6-4e3c-bcf7-6f7c37673aaa')",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "Hide Default Functional Areas",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "ForEach Portal Process",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "insert into bcPortalFunctionalArea\n(portalFunctionalAreaId\n, portalFunctionalAreaName\n, portalId\n, functionalAreaId\n, dateTimeCreated\n, createdById\n, portalFunctionalAreaStatusTypeId\n, siteId\n, isHidden)\nselect newid()\n, fa.functionalAreaName\n, s.portalId\n, fa.functionalAreaId\n, GETUTCDATE()\n, '7b5ea827-bcd7-4a8a-8807-fc7e94a93455'\n, '5dced3d8-305d-4d12-8558-bc4fadbfe3de'\n, s.siteId\n, 1\nfrom bcSite s\n join bcPortalIndustry pi on pi.portalId = s.portalId\n join bcFunctionalArea fa on fa.industryId = pi.industryId\nwhere s.portalId = '@{pipeline().parameters.PortalEntityID}'\n and s.siteStatusTypeId = '6d39ff0b-afac-45e8-bcb0-15673d70ce56' \n and fa.functionalAreaStatusTypeId = 'aae1dff4-d206-4e72-ad0c-c64a30910d29'",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			},
+			{
+				"name": "Lookup Site Type",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "select * from migration_site_type",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.mysql_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.mysql_db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach Site Type",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup Site Type",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup Site Type').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create Site Type",
+							"type": "Script",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[azstudioEntitySettings]\n           ([settingId]\n           ,[settingTypeId]\n           ,[entityId]\n           ,[userStringTypeId]\n           ,[settingValue]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById])\n     VALUES\n           ('@{item().newSettingId}'\n           ,'6dc816ea-8c2b-4438-b6a6-718cb6a4d824'\n           ,'@{item().newSiteId}'\n           ,'00000000-0000-0000-0000-000000000000'\n           ,'@{item().azstudioSettings_value}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n\t)",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"PortalEntityID": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			},
+			"CompanyName": {
+				"type": "string"
+			},
+			"mysql_db_name": {
+				"type": "string"
+			},
+			"mysql_db_server": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"Agility Risk GUID": {
+				"type": "String",
+				"defaultValue": "33999ddb-70b9-47dd-9ba8-664144fd50cc"
+			},
+			"Agility Exercise Manager GUID": {
+				"type": "String",
+				"defaultValue": "aed76c86-8fa2-48e0-b6cd-abc8ffa1f50a"
+			},
+			"Agility Planner GUID": {
+				"type": "String",
+				"defaultValue": "5b4646af-d662-42af-9cde-e3f7e2c3ecb5"
+			},
+			"Incident Manager GUID": {
+				"type": "String",
+				"defaultValue": "6a55f235-61b7-40e5-bfe8-f6821309abab"
+			},
+			"bcIndustry Generic GUID": {
+				"type": "String",
+				"defaultValue": "56397415-6ac4-4c21-9101-e95158e9aac5"
+			},
+			"bcSite GUID": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "Portal"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T19:01:40Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

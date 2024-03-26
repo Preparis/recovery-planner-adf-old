@@ -1,0 +1,140 @@
+{
+	"name": "Create User Role Bundle Partitioned",
+	"properties": {
+		"activities": [
+			{
+				"name": "Execute Pipeline Lookup Iteration Data",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Lookup Iteration Data",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"tableName": "migration_user_roleBundle",
+						"rp_db_name": {
+							"value": "@pipeline().parameters.db_name",
+							"type": "Expression"
+						},
+						"rp_server_name": {
+							"value": "@pipeline().parameters.db_server",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "ForEach User",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Lookup Iteration Data",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Execute Pipeline Lookup Iteration Data').output.pipelineReturnValue.iteration_data_array",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create Preparis Users",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Create User Role Bundle",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"PortalEntityID": {
+										"value": "@pipeline().parameters.PortalEntityID",
+										"type": "Expression"
+									},
+									"CreatedByGUID": {
+										"value": "@pipeline().parameters.CreatedByGUID",
+										"type": "Expression"
+									},
+									"db_name": {
+										"value": "@pipeline().parameters.db_name",
+										"type": "Expression"
+									},
+									"db_server": {
+										"value": "@pipeline().parameters.db_server",
+										"type": "Expression"
+									},
+									"iteration_start": {
+										"value": "@item().iteration_start",
+										"type": "Expression"
+									},
+									"iteration_stop": {
+										"value": "@item().iteration_stop",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"PortalEntityID": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			},
+			"db_name": {
+				"type": "string"
+			},
+			"db_server": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"UserPhoneNumberType_Office": {
+				"type": "String",
+				"defaultValue": "20509910-5326-4057-b21f-5c694b314692"
+			},
+			"UserPhoneNumberType_Personal": {
+				"type": "String",
+				"defaultValue": "5eec12d5-595f-4123-a613-c63e701ae993"
+			},
+			"roleBundleId_Employee": {
+				"type": "String"
+			},
+			"roleBundleId_MessageOnly": {
+				"type": "String"
+			},
+			"roleBundleId_ProgramManager": {
+				"type": "String"
+			},
+			"BusinessContinuityManagerRoleId": {
+				"type": "String",
+				"defaultValue": "a90d9a09-75cd-44d0-8ece-a04d873520ad"
+			}
+		},
+		"folder": {
+			"name": "Users"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T13:58:52Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

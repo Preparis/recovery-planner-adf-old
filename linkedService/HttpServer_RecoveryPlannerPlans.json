@@ -1,0 +1,21 @@
+{
+	"name": "HttpServer_RecoveryPlannerPlans",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"parameters": {
+			"BaseURL": {
+				"type": "string"
+			},
+			"PlanID": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "HttpServer",
+		"typeProperties": {
+			"url": "@{linkedService().BaseURL}plan-print/@{linkedService().PlanID}?print-preview=false&output-format=MSWORD2007&bundled=true&draft=false",
+			"enableServerCertificateValidation": true,
+			"authenticationType": "Anonymous"
+		}
+	}
+}

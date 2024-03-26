@@ -1,0 +1,185 @@
+{
+	"name": "Create User Phone Numbers",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup UserPhone Data",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": {
+							"value": "select \r\nnewPhoneId\r\n, newUserId\r\n, phoneNumberTypeId\r\n, phoneNumberSubTypeId\r\n, phoneNumber\r\n, extension\r\nfrom migration_userPhones\r\nwhere row_num between @{pipeline().parameters.iteration_start} and @{pipeline().parameters.iteration_stop}",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach UserPhone",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup UserPhone Data",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup UserPhone Data').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Create UserPhoneNumbers",
+							"type": "Script",
+							"state": "Inactive",
+							"onInactiveMarkAs": "Succeeded",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[ppuserPhoneNumbers]\n           ([userPhoneId]\n           ,[userId]\n           ,[phoneNumberTypeId]\n           ,[phoneNumberSubTypeId]\n           ,[phoneNumber]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[extension]\n           ,[optOutSms]\n           ,[optOutVoice]\n           ,[isSMSVerified])\n     VALUES\n           ('@{item().newPhoneId}'\n           ,'@{item().newUserId}'\n           ,'@{item().phoneNumberTypeId}'\n           ,'@{item().phoneNumberSubTypeId}'\n           ,'@{item().phoneNumber}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           ,'@{item().extension}'\n           ,0\n           ,0\n           ,NULL\n)",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						},
+						{
+							"name": "Append variable Insert_statements",
+							"type": "AppendVariable",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "insert_statements",
+								"value": {
+									"value": "INSERT INTO [dbo].[ppuserPhoneNumbers]\n           ([userPhoneId]\n           ,[userId]\n           ,[phoneNumberTypeId]\n           ,[phoneNumberSubTypeId]\n           ,[phoneNumber]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[extension]\n           ,[optOutSms]\n           ,[optOutVoice]\n           ,[isSMSVerified])\n     VALUES\n           ('@{item().newPhoneId}'\n           ,'@{item().newUserId}'\n           ,'@{item().phoneNumberTypeId}'\n           ,'@{item().phoneNumberSubTypeId}'\n           ,'@{item().phoneNumber}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           ,'@{item().extension}'\n           ,0\n           ,0\n           ,NULL\n)",
+									"type": "Expression"
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Bulk Insert",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "ForEach UserPhone",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "@join(variables('insert_statements'),';')",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			}
+		],
+		"parameters": {
+			"PortalEntityID": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			},
+			"db_name": {
+				"type": "string"
+			},
+			"db_server": {
+				"type": "string"
+			},
+			"iteration_start": {
+				"type": "string"
+			},
+			"iteration_stop": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"UserPhoneNumberType_Office": {
+				"type": "String",
+				"defaultValue": "20509910-5326-4057-b21f-5c694b314692"
+			},
+			"UserPhoneNumberType_Personal": {
+				"type": "String",
+				"defaultValue": "5eec12d5-595f-4123-a613-c63e701ae993"
+			},
+			"insert_statements": {
+				"type": "Array"
+			}
+		},
+		"folder": {
+			"name": "Users"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T14:07:11Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

@@ -1,0 +1,17 @@
+{
+	"name": "BinaryPreparis",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "HttpServerPreparis",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Binary",
+		"typeProperties": {
+			"location": {
+				"type": "HttpServerLocation"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

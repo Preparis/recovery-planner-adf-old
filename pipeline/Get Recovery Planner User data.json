@@ -1,0 +1,67 @@
+{
+	"name": "Get Recovery Planner User data",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get Recovery Planner Users",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "CREATE TEMPORARY TABLE IF NOT EXISTS user_data AS (\r\nSELECT \r\n    (SELECT uuid()) as newUserId\r\n    , (SELECT uuid()) as entityUserItemId_portal\r\n    , (SELECT uuid()) as entityUserItemId_location\r\n    , (SELECT uuid()) as userProfileId\r\n    , u.id as userId\r\n    , c.name as contactName\r\n    , IFNULL(ci.email,c.name) as username\r\n    , c.firstName\r\n    , c.middleInitials\r\n    , c.lastName\r\n    , case u.role when 0 then 'SYSTEM' when 1 then 'PARTNER' when 2 THEN 'ADMIN' when 3 then 'MANAGER' when 4 then 'USER' when 5 then 'LISTED' end AS role\r\n    , case u.status when 0 then 'ACTIVE' when 1 then 'INACTIVE' when 2 then 'LOCKED' when 3 then 'TERMINATED' end AS status\r\n    , u.currentLoginAttempts\r\n    , IFNULL(u.password,'') as password\r\n    , u.passwordExpired\r\n    , u.passwordLastUpdated\r\n    , u.twoFactorAuth\r\n    , u.twoFactorAuthSecret\r\n    , u.creationdate\r\n    , u.timezone\r\n    , c.externalID\r\n    \r\n    , case \r\n        when u.timezone = 'UTC' then '8fa8449a-4be5-4b8c-9bcd-c7f378a9f438'\r\n        when u.timezone = 'JST' then '8702ab86-8acc-468d-a735-f5ab8c8de4d5'\r\n        when u.timezone in ('CST', 'America/Chicago') then '19a4144b-76bd-42fd-baa8-bb528a814884'\r\n        when u.timezone in ('EST', 'America/New_York') then 'c16ab931-6dfa-40b0-ac2a-e404e725c8b9'\r\n        else concat('TimeZone', u.timezone, ' Not Yet Mapped')\r\n        END  as timeZoneId\r\n        \r\n    , ci.pin\r\n    , u.title\r\n\r\n    , case u.LANGUAGE when 0 then  'BROWSER_LOCALE'\r\n        when 1 then 'ENGLISH'\r\n        when 2 then 'PORTUGUESE_BRAZIL'\r\n        when 3 then 'SPANISH_DOMINICAN_REP'\r\n        when 4 then 'SPANISH_MEXICAN'\r\n        when 5 then 'FRENCH'\r\n        when 6 then 'RUSSIAN'\r\n       end\r\n       as Language_String\r\n\r\nFROM T_CONTACT c\r\nLEFT JOIN T_USER u ON c.id = u.id\r\nleft JOIN T_CONTACT_INFO ci ON c.id = ci.owner_id and ci.primaryEmail = 1\r\n);\r\n\r\nCREATE TEMPORARY TABLE IF NOT EXISTS user_site_data AS (\r\n    select ud.newUserId, ud.contactName, ud.username, ud.userId, s.*\r\n    from User_data ud\r\n    JOIN T_USER_SITE us ON ud.userId = us.user_id\r\n    JOIN T_SITE s on us.site_id = s.id\r\n);\r\n\r\nCREATE TEMPORARY TABLE IF NOT EXISTS user_site_json_data AS(\r\nselect newUserId\r\n, JSON_ARRAYAGG(JSON_OBJECT(\r\n    'newEnitiyId_Location', (SELECT uuid())\r\n    , 'siteName', usd.name\r\n    , 'siteAddress', usd.address\r\n    , 'siteAddress2', usd.address2\r\n    , 'siteCity', usd.city\r\n    , 'siteState', usd.state\r\n    , 'siteZip', usd.zip\r\n    , 'siteDescription', usd.description\r\n    , 'siteGeneralEmail', usd.generalEmail\r\n    , 'siteLatitude', usd.latitude\r\n    , 'siteLongitude', usd.longitude\r\n    , 'siteFax', usd.mainFax\r\n    , 'sitePhoneNumber', usd.mainNumber\r\n    , 'primarySite', usd.primarySite\r\n    , 'siteRegion', usd.region\r\n    , 'siteCountry', usd.country_id\r\n    )) as user_site_json\r\nfrom user_site_data usd\r\ngroup by newUserId\r\n);\r\n\r\nselect ud.*, jd.user_site_json\r\nfrom user_data ud\r\njoin user_site_json_data jd on ud.newUserId = jd.newUserID\r\n",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Set variable RecoveryPlannerUsers",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get Recovery Planner Users",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "RecoveryPlannerUsers",
+					"value": {
+						"value": "@activity('Get Recovery Planner Users').output.value",
+						"type": "Expression"
+					}
+				}
+			}
+		],
+		"variables": {
+			"RecoveryPlannerUsers": {
+				"type": "Array"
+			}
+		},
+		"folder": {
+			"name": "Backup"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-02-15T15:58:32Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

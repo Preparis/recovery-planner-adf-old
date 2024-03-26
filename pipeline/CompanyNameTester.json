@@ -1,0 +1,62 @@
+{
+	"name": "CompanyNameTester",
+	"properties": {
+		"activities": [
+			{
+				"name": "Execute Pipeline Get RP CompanyName",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get RP CompanyName",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"rp_server_name": "recovery-planner-mysql-server.mysql.database.azure.com",
+						"rp_db_name": "mercbank"
+					}
+				}
+			},
+			{
+				"name": "Set variable CompanyName",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get RP CompanyName",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "CompanyName",
+					"value": {
+						"value": "@activity('Execute Pipeline Get RP CompanyName').output.pipelineReturnValue.CompanyName",
+						"type": "Expression"
+					}
+				}
+			}
+		],
+		"variables": {
+			"CompanyName": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "Testers and Misc"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-13T10:01:42Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

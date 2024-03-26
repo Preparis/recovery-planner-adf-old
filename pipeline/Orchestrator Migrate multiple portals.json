@@ -1,0 +1,65 @@
+{
+	"name": "Orchestrator Migrate multiple portals",
+	"properties": {
+		"activities": [
+			{
+				"name": "ForEach Recovery Planner Database",
+				"type": "ForEach",
+				"dependsOn": [],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@pipeline().parameters.dbNameArray",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "Execute Pipeline Orchestrator Migrate Single Portal",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "Orchestrator Migrate Single Portal",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"rp_server_name": {
+										"value": "@variables('rp_server_name')",
+										"type": "Expression"
+									},
+									"rp_db_name": {
+										"value": "@item()",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"dbNameArray": {
+				"type": "array",
+				"defaultValue": [
+					"nationalindemnity"
+				]
+			}
+		},
+		"variables": {
+			"rp_server_name": {
+				"type": "String",
+				"defaultValue": "recovery-planner-mysql-server.mysql.database.azure.com"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-20T16:34:29Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

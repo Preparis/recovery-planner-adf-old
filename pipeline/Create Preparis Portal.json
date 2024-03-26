@@ -1,0 +1,114 @@
+{
+	"name": "Create Preparis Portal",
+	"properties": {
+		"activities": [
+			{
+				"name": "CreateNewPortal",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Script Update Portal to deleted if it already exists",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[dbo].[az_ppentityCustom_CreateNewPortal]",
+					"storedProcedureParameters": {
+						"ParentEntityId": {
+							"value": "b9a3eed5-80b2-4c11-b317-1b2ab2c006aa",
+							"type": "Guid"
+						},
+						"CompanyName": {
+							"value": {
+								"value": "@pipeline().parameters.CompanyName",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"VerticalID": {
+							"value": "3089683e-a1c9-4c91-9b87-1e3888a9cfcf",
+							"type": "Guid"
+						},
+						"PortalID": {
+							"value": {
+								"value": "@pipeline().parameters.PortalEntityID",
+								"type": "Expression"
+							},
+							"type": "Guid"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Script Update Portal to deleted if it already exists",
+				"type": "Script",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "with portal_exists as (\n\tSELECT e.entityId, e.entityName, e.entityTypeId, et.entityTypeName, e.entityStatusTypeId, st.entityStatusTypeName \n\tfrom  azstudioEntityEntities e\n\tJOIN azstudioEntityEntityTypes et on e.entityTypeId = et.entityTypeId\n\tJOIN azstudioEntityStatusTypes st on e.entityStatusTypeId = st.entityStatusTypeId\n\twhere e.entityName = '@{pipeline().parameters.CompanyName}'\n\tand et.entityTypeName = 'Portal'\n\tand e.entityStatusTypeId != '847EBBEF-B0C9-48A3-9891-212833DDFAC6'\n)\n\nupdate azstudioEntityEntities \nset entityStatusTypeId = '847EBBEF-B0C9-48A3-9891-212833DDFAC6'\nwhere entityId in (select entityId from portal_exists)",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			}
+		],
+		"parameters": {
+			"CompanyName": {
+				"type": "string"
+			},
+			"PortalEntityID": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"PortalEntityID": {
+				"type": "String"
+			},
+			"CreatedByGUID": {
+				"type": "String",
+				"defaultValue": "7b5ea827-bcd7-4a8a-8807-fc7e94a93455"
+			},
+			"DefaultLocationId": {
+				"type": "String",
+				"defaultValue": "0b92f0ba-1a21-43cb-995e-e2843f53a557"
+			}
+		},
+		"folder": {
+			"name": "Portal"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T19:01:40Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

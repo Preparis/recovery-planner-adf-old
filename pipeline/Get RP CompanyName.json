@@ -1,0 +1,86 @@
+{
+	"name": "Get RP CompanyName",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup Company Name",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": {
+							"value": "SELECT \ncase when fullName is NULL or fullName ='' then TRIM(dbname) else TRIM(fullName) end as CompanyName\nFROM t_client_info\nwhere dbname = '@{pipeline().parameters.rp_db_name}'",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": "Common",
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": true
+				}
+			},
+			{
+				"name": "Set variable CompanyName ReturnValue",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Lookup Company Name",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "pipelineReturnValue",
+					"value": [
+						{
+							"key": "CompanyName",
+							"value": {
+								"type": "Expression",
+								"content": "@activity('Lookup Company Name').output.firstRow.CompanyName"
+							}
+						}
+					],
+					"setSystemVariable": true
+				}
+			}
+		],
+		"parameters": {
+			"rp_server_name": {
+				"type": "string"
+			},
+			"rp_db_name": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "Documents"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T19:01:40Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

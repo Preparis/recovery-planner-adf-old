@@ -1,0 +1,76 @@
+{
+	"name": "Get Preparis Portal ID",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get Active PortalId",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "select e.entityId\nfrom azstudioEntityEntities e \nJOIN azstudioEntityEntityTypes et on e.entityTypeId = et.entityTypeId\nJOIN azstudioEntityStatusTypes st on e.entityStatusTypeId = st.entityStatusTypeId\nwhere entityName =  '@{pipeline().parameters.companyName}'\nand et.entityTypeName = 'Portal'\nand st.entityStatusTypeName = 'Active'",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "Preparis",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "Set variable portalEntityId",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get Active PortalId",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "pipelineReturnValue",
+					"value": [
+						{
+							"key": "portalEntityId",
+							"value": {
+								"type": "Expression",
+								"content": "@activity('Get Active PortalId').output.firstRow.entityId"
+							}
+						}
+					],
+					"setSystemVariable": true
+				}
+			}
+		],
+		"parameters": {
+			"companyName": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "common"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-20T14:08:54Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

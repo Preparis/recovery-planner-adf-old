@@ -1,0 +1,21 @@
+{
+	"name": "HttpServer_RecoveryPlanner_Incidents",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"parameters": {
+			"rpBaseUrl": {
+				"type": "string"
+			},
+			"rpEventId": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "HttpServer",
+		"typeProperties": {
+			"url": "@{linkedService().rpBaseUrl}incidents/@{linkedService().rpEventId}/preview-save?notifications=true&notificationOption=BOTH&history=true&incidentLog=true&expenseLog=false&teamInfo=true",
+			"enableServerCertificateValidation": true,
+			"authenticationType": "Anonymous"
+		}
+	}
+}

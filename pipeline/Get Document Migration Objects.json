@@ -1,0 +1,499 @@
+{
+	"name": "Get Document Migration Objects",
+	"properties": {
+		"activities": [
+			{
+				"name": "Set variable rpClientId",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Set variable currentPortalId from DB_copy1",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "rpClientId",
+					"value": {
+						"value": "@{pipeline().parameters.rp_db_name}",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Get RP CompanyName",
+				"type": "ExecutePipeline",
+				"dependsOn": [],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get RP CompanyName",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"rp_server_name": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						},
+						"rp_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set variable CompanyName",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get RP CompanyName",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "CompanyName",
+					"value": {
+						"value": "@activity('Execute Pipeline Get RP CompanyName').output.pipelineReturnValue.CompanyName",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set variable UserRootPortal",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Set variable preparisUserId from pipeline",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "UserRootPortal",
+					"value": {
+						"value": "@activity('Execute Pipeline Get Preparis Session Token').output.pipelineReturnValue.currentPortalId",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Get RP Session Token",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Set variable rpClientId",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get RP Session Token",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"rpClientID": {
+							"value": "@variables('rpClientId')",
+							"type": "Expression"
+						},
+						"rpUserName": {
+							"value": "@pipeline().parameters.rpRestUserName",
+							"type": "Expression"
+						},
+						"rpUserPassword": {
+							"value": "@pipeline().parameters.rpRestUserPassword",
+							"type": "Expression"
+						},
+						"rpBaseUrl": {
+							"value": "@pipeline().parameters.rpBaseURL",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set variable rpSessionToken",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get RP Session Token",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "rpSessionToken",
+					"value": {
+						"value": "@activity('Execute Pipeline Get RP Session Token').output.pipelineReturnValue.rpSessionToken",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Get Preparis Session Token",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Set variable rpClientId",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get Preparis Session Token",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"preparisBaseURL": {
+							"value": "@pipeline().parameters.preparisBaseURL",
+							"type": "Expression"
+						},
+						"preparisDeviceIdAsBase64": {
+							"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set variable preparisSessionToken from pipeline",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get Preparis Session Token",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "preparisSessionToken",
+					"value": {
+						"value": "@activity('Execute Pipeline Get Preparis Session Token').output.pipelineReturnValue.preparisSessionToken",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set variable preparisUserId from pipeline",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Set variable preparisSessionToken from pipeline",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "preparisUserId",
+					"value": {
+						"value": "@activity('Execute Pipeline Get Preparis Session Token').output.pipelineReturnValue.preparisUserId",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Get Preparis PortalID",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Set variable CompanyName",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get Preparis Portal ID",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"companyName": {
+							"value": "@variables('CompanyName')",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set variable currentPortalId from DB_copy1",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get Preparis PortalID",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "preparisCurrentPortalId",
+					"value": {
+						"value": "@activity('Execute Pipeline Get Preparis PortalID').output.pipelineReturnValue.portalEntityId",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Get Preparis Root Folder",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Set variable UserRootPortal",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get Preparis Root Folder",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"preparisBaseURL": {
+							"value": "@pipeline().parameters.preparisBaseURL",
+							"type": "Expression"
+						},
+						"preparisDeviceIdAsBase64": {
+							"value": "@pipeline().parameters.preparisDeviceIdAsBase64",
+							"type": "Expression"
+						},
+						"preparisSessionToken": {
+							"value": "@variables('preparisSessionToken')",
+							"type": "Expression"
+						},
+						"preparisCurrentPortalId": {
+							"value": "@variables('preparisCurrentPortalId')",
+							"type": "Expression"
+						},
+						"UserRootPortal": {
+							"value": "@variables('UserRootPortal')",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set variable preparisRootFolderId_copy1",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get Preparis Root Folder",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "preparisRootFolderId",
+					"value": {
+						"value": "@activity('Execute Pipeline Get Preparis Root Folder').output.pipelineReturnValue.rootFolderId",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set Return Variables",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Set variable preparisRootFolderId_copy1",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "Set variable rpSessionToken",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "pipelineReturnValue",
+					"value": [
+						{
+							"key": "preparisRootFolderId",
+							"value": {
+								"type": "Expression",
+								"content": "@variables('preparisRootFolderId')"
+							}
+						},
+						{
+							"key": "preparisSessionToken",
+							"value": {
+								"type": "Expression",
+								"content": "@variables('preparisSessionToken')"
+							}
+						},
+						{
+							"key": "preparisCurrentPortalId",
+							"value": {
+								"type": "Expression",
+								"content": "@variables('preparisCurrentPortalId')"
+							}
+						},
+						{
+							"key": "preparisUserId",
+							"value": {
+								"type": "Expression",
+								"content": "@variables('preparisUserId')"
+							}
+						},
+						{
+							"key": "rpSessionToken",
+							"value": {
+								"type": "Expression",
+								"content": "@variables('rpSessionToken')"
+							}
+						},
+						{
+							"key": "rpClientId",
+							"value": {
+								"type": "Expression",
+								"content": "@variables('rpClientId')"
+							}
+						}
+					],
+					"setSystemVariable": true
+				}
+			}
+		],
+		"parameters": {
+			"rp_db_name": {
+				"type": "string"
+			},
+			"rp_server_name": {
+				"type": "string"
+			},
+			"preparisBaseURL": {
+				"type": "string"
+			},
+			"preparisDeviceIdAsBase64": {
+				"type": "string"
+			},
+			"rpBaseURL": {
+				"type": "string"
+			},
+			"rpRestUserName": {
+				"type": "string"
+			},
+			"rpRestUserPassword": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"rpSessionToken": {
+				"type": "String"
+			},
+			"rpClientId": {
+				"type": "String"
+			},
+			"preparisSessionToken": {
+				"type": "String"
+			},
+			"preparisUserId": {
+				"type": "String"
+			},
+			"preparisCurrentPortalId": {
+				"type": "String"
+			},
+			"preparisRootFolderId": {
+				"type": "String"
+			},
+			"CompanyName": {
+				"type": "String"
+			},
+			"UserRootPortal": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "Documents"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T19:01:41Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

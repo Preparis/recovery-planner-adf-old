@@ -1,0 +1,13 @@
+{
+	"name": "HttpServerPreparis",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"annotations": [],
+		"type": "HttpServer",
+		"typeProperties": {
+			"url": "https://dev-main-core.preparisapp.com/API/CreateOrUpdateDocument",
+			"enableServerCertificateValidation": true,
+			"authenticationType": "Anonymous"
+		}
+	}
+}

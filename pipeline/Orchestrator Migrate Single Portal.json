@@ -1,0 +1,467 @@
+{
+	"name": "Orchestrator Migrate Single Portal",
+	"properties": {
+		"activities": [
+			{
+				"name": "Build Migration Tables",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "DROP TABLE if exists migration_all_user_data;\r\n\r\nCREATE TABLE migration_all_user_data AS (\r\n\r\n    with user_role_status_data as (\r\n        SELECT \r\n            u.id as userId\r\n            , case \r\n                when u.role is NULL or u.role = 5 then 'LISTED'\r\n                when u.role = 4 then 'USER' \r\n                when u.role = 3 then 'MANAGER'\r\n                when u.role = 2 THEN 'ADMIN' \r\n                when u.role = 1 then 'PARTNER' \r\n                when u.role = 0 then 'SYSTEM' \r\n            end AS role\r\n            , case u.status when 0 then 'ACTIVE' when 1 then 'INACTIVE' when 2 then 'LOCKED' when 3 then 'TERMINATED' end AS status\r\n            , COALESCE(ci.email,c.name, CONCAT(c.firstName,'_',c.lastName,'_NoEmailOrContactName')) as username\r\n            , IFNULL(u.password,'') as password\r\n            , c.firstName\r\n            , c.lastName\r\n            , ci.pin\r\n            , u.title\r\n            , u.employeeID\r\n        FROM T_CONTACT c\r\n        LEFT JOIN T_USER u ON c.id = u.id\r\n        left JOIN T_CONTACT_INFO ci ON c.id = ci.owner_id and ci.primaryEmail = 1\r\n        /*new rule when you pull users from RecoveryPlanner. If their Role is System they need to be ignored and not migrated.  02_27_2024*/\r\n        where u.role != 0 \r\n    )\r\n    , user_stateId_data as ( \r\n        select \r\n            * \r\n            , case \r\n                when role = 'LISTED' or username = '' then 'c1ff019b-b3f6-411c-b04e-59294e9090fe'  /*ACTIVE*/\r\n                when status = 'INACTIVE' then 'ffb8849c-4dc6-4c66-9d00-f93ac2ef260b' /*INACTIVE*/\r\n                else 'b5d6bc28-5e6d-4bd1-b028-f7e9a6c6b7a1' /*PENDING*/\r\n            end as userStateId\r\n        from user_role_status_data\r\n    )\r\n\r\n    select *\r\n    , (SELECT uuid()) as newUserId \r\n    , (SELECT uuid()) as entityUserItemId\r\n    from user_stateId_data\r\n);\r\n\r\n/*  DEDUPE USERNAME DATA */\r\ndrop table if exists migration_deduped_username_data;\r\n\r\ncreate table migration_deduped_username_data as (\r\n    with duplicated_userName_data as (\r\n        select \r\n        count(newUserId) dupeCount\r\n        , username\r\n        from migration_all_user_data mud\r\n        where mud.role != 'LISTED'\r\n        group by username\r\n        having count(newUserID) > 1\r\n    )\r\n    , keep_duplicated_userId as(\r\n        select min(mud.userId) userId, mud.username\r\n        from duplicated_userName_data dud\r\n        join migration_all_user_data mud on dud.username = mud.username\r\n        where mud.role != 'LISTED'\r\n        group by mud.username\r\n    )\r\n    , keep_duplicated_user_data as(\r\n        select mud.userId\r\n        , role\r\n        , 'PENDING' as status  /*  this is meaningless, the userStateId drives this data */\r\n        , mud.username\r\n        , mud.password\r\n        , mud.firstName\r\n        , mud.lastName\r\n        , mud.pin\r\n        , mud.title\r\n        , userStateId\r\n        , mud.newUserId\r\n        , mud.EntityUserItemId\r\n        , mud.employeeID\r\n        from keep_duplicated_userId kud\r\n        join migration_all_user_data mud on kud.userId = mud.userId\r\n    )\r\n    , overwrite_duplicated_user_data as (\r\n        select mud.userId\r\n        , 'LISTED' as role\r\n        , 'ACTIVE' as status\r\n        , case when mud.username like '_%@_%._%' then mud.username else '' end as username\r\n        , mud.password\r\n        , mud.firstName\r\n        , mud.lastName\r\n        , mud.pin\r\n        , mud.title\r\n        , 'c1ff019b-b3f6-411c-b04e-59294e9090fe' as userStateId  /*ACTIVE*/\r\n        , mud.newUserId\r\n        , mud.EntityUserItemId\r\n        , mud.employeeID\r\n        from duplicated_userName_data dud\r\n        join migration_all_user_data mud on dud.username = mud.username\r\n        left join keep_duplicated_userId kud on mud.userId = kud.userId\r\n        where kud.userId is null \r\n        and mud.role != 'LISTED'\r\n    )\r\n    select * from keep_duplicated_user_data\r\n    union\r\n    select * from overwrite_duplicated_user_data\r\n);\r\n\r\n\r\n/* MIGRATION USER DATA */\r\n\r\ndrop table if exists migration_user_data;\r\n\r\ncreate table migration_user_data as (\r\n    with mud as (\r\n        select aud.userId\r\n            , aud.role\r\n            , aud.status\r\n            , case when aud.username like '_%@_%._%' then aud.username else '' end as username\r\n            , aud.password\r\n            , aud.firstName\r\n            , aud.lastName\r\n            , aud.pin\r\n            , aud.title\r\n            , aud.userStateId\r\n            , aud.newUserId\r\n            , aud.EntityUserItemId \r\n            , aud.employeeID\r\n        from migration_all_user_data aud\r\n        left join migration_deduped_username_data dud on aud.userid = dud.userId\r\n        where dud.userid is null\r\n\r\n        union \r\n\r\n        select * from migration_deduped_username_data\r\n    )\r\n    select ROW_NUMBER() OVER (ORDER BY userId) row_num\r\n    , mud.*\r\n    from mud\r\n);\r\n\r\n\r\n/*PROFILE*/\r\nDROP TABLE if exists migration_user_profile;\r\n\r\nCREATE TABLE migration_user_profile AS (\r\n    with combined_user_profile as(\r\n        select \r\n        (SELECT uuid()) as userProfileId\r\n        , newUserId \r\n        , firstName\r\n        , lastName\r\n        , pin\r\n        , title\r\n        from migration_user_data ud\r\n    )\r\n    select \r\n    ROW_NUMBER() OVER (ORDER BY userProfileId) row_num\r\n    , cup.*\r\n    from combined_user_profile cup    \r\n);\r\n\r\n/* EMAILS */\r\n\r\n/*\r\nemailTypeId\t                            emailTypeName\r\nd440a213-3ab4-4fb9-b306-5f567141ac53\tBilling   -> preparisBillingEmail\r\nd2b1d156-bdf9-4223-9368-825a448025ad\tBusiness  -> preparisBusinessEmail\r\nacb4f38f-3642-472a-8de2-dcead28584a2\tPersonal  -> preparisPersonalEmail\r\n\r\n    Email data, map lowest internal ID data per distribution type that has data. \r\n        rp.user.email(Business Distribution Email)= p.user.email(Email)\r\n        rp.user.email(Personal Distribution Email) = p.user.email(Personal Email)\r\n\r\n\tdistributionType\r\n\t\t0 = business\r\n\t\t1 = personal\r\n\r\nselect * from T_CONTACT_TYPE\r\n*/\r\n\r\ndrop table if exists migration_all_userEmails;\r\n\r\ncreate table migration_all_userEmails as (\r\n    select \r\n        (select uuid()) as newEmailId\r\n        , mud.newUserId\r\n        , ci.id as rpEmailId\r\n        , ct.name  \r\n        , cast(AES_DECRYPT(ci.contactName, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) as contactName\r\n        , case when dud.userId is not null then '' else mud.username end as email\r\n        , ci.emailToSms\r\n        , ci.primaryEmail\r\n        , ct.mappedName\r\n        , ct.distributionType\r\n        , case \r\n            when ct.distributionType = 0 then 'd2b1d156-bdf9-4223-9368-825a448025ad'\r\n            when ct.distributionType = 1 then 'acb4f38f-3642-472a-8de2-dcead28584a2'\r\n            end as 'emailAddressTypeId'\r\n\r\n    from migration_user_data mud\r\n    LEFT JOIN T_CONTACT_INFO ci ON mud.userId = ci.owner_id\r\n    left join migration_deduped_username_data dud on mud.userID = dud.userId and dud.role = 'LISTED'\r\n    JOIN T_CONTACT_TYPE ct ON ci.contact_type_id = ct.id\r\n    JOIN T_CONTACT_METHOD cm on ct.contact_method_id = cm.id\r\n    where cm.name = 'EMAIL' \r\n);\r\n\r\ndrop table if exists migration_userEmails_initial;\r\ncreate table migration_userEmails_initial as (\r\n    with business_emails as (\r\n        select  min(rpEmailId) 'minEmailId'\r\n            ,newEmailId\r\n            ,newUserId\r\n            ,name\r\n            ,contactName\r\n            ,email\r\n            ,emailToSms\r\n            ,primaryEmail\r\n            ,distributiontype\r\n            ,emailAddressTypeId\r\n        from migration_all_userEmails \r\n        where emailAddressTypeId = 'd2b1d156-bdf9-4223-9368-825a448025ad'\r\n        group BY\r\n            newEmailId\r\n            ,newUserId\r\n            ,name\r\n            ,contactName\r\n            ,email\r\n            ,emailToSms\r\n            ,primaryEmail\r\n            ,distributiontype\r\n            ,emailAddressTypeId\r\n    )\r\n    , personal_emails as (\r\n        select  min(rpEmailId) 'minEmailId'\r\n            ,newEmailId\r\n            ,newUserId\r\n            ,name\r\n            ,contactName\r\n            ,email\r\n            ,emailToSms\r\n            ,primaryEmail\r\n            ,distributiontype\r\n            ,emailAddressTypeId\r\n        from migration_all_userEmails \r\n        where emailAddressTypeId = 'acb4f38f-3642-472a-8de2-dcead28584a2'\r\n        group BY\r\n            newEmailId\r\n            ,newUserId\r\n            ,name\r\n            ,contactName\r\n            ,email\r\n            ,emailToSms\r\n            ,primaryEmail\r\n            ,distributiontype\r\n            ,emailAddressTypeId\r\n    )\r\n    \r\n    select * from business_emails\r\n    UNION\r\n    select * from personal_emails\r\n);\r\n\r\n/*  If a user has a personal email, but no business email, create the business email data \r\ncould not do inline insert with multiple CTE, kept getting error: check the manual that corresponds to your MySQL server version for the right syntax to use near 'insert into\r\n so I create a physical table to do the insert instead\r\n*/\r\n\r\ndrop table if exists migration_userEmails_additionalBusinessEmail;\r\ncreate table migration_userEmails_additionalBusinessEmail as (\r\n    with users_personal as (\r\n        select distinct newUserId \r\n        from migration_userEmails_initial \r\n        where emailAddressTypeId = 'acb4f38f-3642-472a-8de2-dcead28584a2'\r\n    )\r\n    , users_business as (\r\n        select distinct newUserId \r\n        from migration_userEmails_initial \r\n        where emailAddressTypeId = 'd2b1d156-bdf9-4223-9368-825a448025ad'\r\n    )\r\n    , target_users_to_create_business as (\r\n        select up.* \r\n        from users_personal up\r\n        left join users_business ub on up.newUserId = ub.newUserId\r\n        where ub.newUserId is NULL\r\n    )\r\n\r\n    /* protect from dupes*/\r\n    , distinct_target_users as (\r\n        select min(mue.minEmailID) minEmailId, mue.newUserId \r\n        from target_users_to_create_business tu\r\n        join migration_userEmails_initial mue on tu.newUserId = mue.newUserId\r\n        group by newUserId\r\n    )\r\n\r\n    select mue.minEmailId\r\n        , uuid() as newEmailId\r\n        , mue.newUserId\r\n        , mue.name\r\n        , mue.contactName\r\n        , mue.email\r\n        , mue.emailToSms\r\n        , 0 as primaryEmail \r\n        , 0 as distributionType\r\n        , 'd2b1d156-bdf9-4223-9368-825a448025ad' as emailAddressTypeId\r\n        from distinct_target_users dtu\r\n        join migration_userEmails_initial mue on dtu.newUserId = mue.newUserId\r\n);\r\n\r\n\r\ndrop table if exists migration_userEmails;\r\ncreate table migration_userEmails as (\r\n\r\n    with combined_email_data as (\r\n        select * from migration_userEmails_initial\r\n        UNION\r\n        select * from migration_userEmails_additionalBusinessEmail\r\n    )\r\n    select \r\n    ROW_NUMBER() OVER (ORDER BY newEmailId) row_num\r\n    , ced.*\r\n    from combined_email_data ced  \r\n);\r\n\r\n/*ROLE BUNDLE*/\r\nDROP TABLE if exists migration_user_roleBundle;\r\n\r\nCREATE TABLE migration_user_roleBundle AS (\r\n    select \r\n    row_num\r\n    , newUserId \r\n    , role \r\n    from migration_user_data ud\r\n);\r\n\r\n\r\nDROP TABLE if exists migration_site_data;\r\n\r\nCREATE TABLE migration_site_data AS (\r\n    select \r\n    (SELECT uuid()) as newSiteId\r\n    , (SELECT uuid()) as newAddressId\r\n    , (SELECT uuid()) as newMainNumberId\r\n    , (SELECT uuid()) as newFaxNumberId\r\n    , s.id\r\n    , s.legacyId\r\n    , case when length(s.name) > 100 then substring(s.name,1,100) else s.name end as name    \r\n    , s.accessLevel\r\n    , s.address\r\n    , s.address2\r\n    , s.altSiteSeatsAvailable\r\n    /*, s.alternateSite  bit columns in lwcotrust?! */\r\n    /*, s.available*/\r\n    , s.city\r\n    , s.description\r\n    , s.generalEmail\r\n    , s.geoCodeDate\r\n    , s.geoCodeStatus\r\n    , cast(s.latitude as float) as latitude\r\n    , cast(s.longitude as float) as longitude\r\n    , s.mainFax\r\n    , s.mainNumber\r\n    /*, s.planRequired*/\r\n    /*, s.primarySite*/\r\n    /*, s.region*/\r\n   /* , s.showWeather*/\r\n    , s.siteID\r\n    , s.state\r\n    , s.zip\r\n    , s.contactlist_id\r\n    , s.country_id\r\n    , s.currentSurvey_id\r\n    , s.alert_id\r\n    , c.name as siteCountryName\r\n    , c.code as countryCode\r\n    , c.phonePrefix as countryPhonePrefix\r\n    , case c.code \r\n        when 'US' then 'B4F1E6F9-D824-4F8B-8B4D-071D176FD9F3' \r\n        else 'E07182E2-6B17-420B-A613-33BF652B7E44' \r\n        end as 'PhoneTypeSubType'\r\n    from T_SITE s \r\n    LEFT JOIN T_COUNTRY c on s.country_id = c.id\r\n);\r\n\r\n\r\ncreate table if not exists migration_preparis_userCountry as (\r\n    Select 'B6ACC878-8EB9-41D6-A636-03921C8FF9FB' as 'CountryTypeId', 'Nigeria' as 'CountryTypeName'union \r\n    Select 'C87CAF13-D2C2-4D89-8ED3-0713814CC627', 'Norway' union \r\n    Select 'B352135E-0AD1-4518-A4CE-07D774EF6FDE', 'China' union \r\n    Select '43870421-4D2F-42C6-8B89-084DC6F8586A', 'Bahrain' union \r\n    Select '84C31639-DD3A-4D1B-98ED-09C332775495', 'Argentina' union \r\n    Select 'B4BD6E63-6EB1-4617-B3E0-0E30CB80E5E7', 'Lithuania' union \r\n    Select 'D20336AD-7384-4CEC-95EF-12036F41DDCC', 'Korea, Republic of' union \r\n    Select 'CF7F7DE8-A69F-4B36-A142-1289D1495119', 'Hong Kong' union \r\n    Select '04ADA07F-1F50-4358-B2CC-1340E337B6C7', 'Mauritius' union \r\n    Select '46FC1E96-2BE0-4AC4-A2A5-134D7049B829', 'Cameroon' union \r\n    Select '623C4DE2-764E-4EAB-A070-1512C9C368D7', 'El Salvador' union \r\n    Select 'B5CF4E7E-9D24-498C-9547-164A14906020', 'Finland' union \r\n    Select '293909AF-BBB1-4714-9056-27D9FC5645E6', 'Jersey' union \r\n    Select '88DA79E6-2623-47D3-93F9-2A6F28E30900', 'India' union \r\n    Select '655EDCB9-F22D-413A-996D-313B719133F6', 'Kazakhstan' union \r\n    Select '37A8443F-0C69-4563-8004-37A6013529C7', 'Macau' union \r\n    Select 'E18A52FD-C318-44F6-BD4E-3A956F594810', 'Equatorial Guinea' union \r\n    Select 'ABC7ACE5-8FA0-4897-A0AB-3AA23E378080', 'Uruguay' union \r\n    Select '07AA6006-882F-4A3C-BDEA-44F1F282F9DC', 'Bermuda' union \r\n    Select 'EE20D858-011F-4E97-9729-50AEEE0D69DD', 'Malta' union \r\n    Select 'CBF776D1-3482-4984-B51C-548989BEDE4A', 'Bolivia' union \r\n    Select 'ABFDAC74-265E-4521-976D-570B7CED3881', 'Thailand' union \r\n    Select 'E9BD6F88-D62A-4F52-95F4-5A0B6E684A1A', 'United States Virgin Islands' union \r\n    Select 'E0712A04-2CDB-4CFC-B0D4-5A3F4DCA0F50', 'Ireland' union \r\n    Select '2BF5D5C2-DA98-469A-B5AF-5E78A09F7D3D', 'Russian Federation' union \r\n    Select 'DF1B16BA-B7DB-4344-BEF3-616021F46F51', 'Taiwan' union \r\n    Select '2B3819DB-1BCB-478C-A9C9-64D29CB6D88C', 'Grenada' union \r\n    Select 'B7BEE327-7BE4-405D-AC47-694F54BAFB81', 'Belgium' union \r\n    Select '871A59AF-9412-477B-AEEA-69D86F9A5869', 'Mongolia' union \r\n    Select 'CE67B074-909F-45F2-8FDE-6A7AF1F480B7', 'Tunisia' union \r\n    Select 'E02AEF50-3871-41DF-B34D-740E2A0E869C', 'Azerbaijan' union \r\n    Select '9A64B9EA-4D3F-4872-8542-744544000800', 'United Kingdom' union \r\n    Select '4EF914B9-A5E1-4CAE-919E-77DD8EB08B2F', 'South Africa' union \r\n    Select '98865216-88A1-4D63-8D42-7937CABED4BC', 'Venezuela' union \r\n    Select 'E03665AC-F774-42D7-A648-7949C85E63C1', 'United Arab Emirates' union \r\n    Select '949EFF05-C41C-4D40-8FE5-7B93455D310B', 'North America' union \r\n    Select '0026A74D-6110-40DD-A2A7-827CF94884EE', 'Senegal' union \r\n    Select '6601A72C-BDB7-43B0-BCBA-8474F3BE0F45', 'Sweden' union \r\n    Select 'D7B2C181-1BA4-4619-ABA3-84B111A686F0', 'Malaysia' union \r\n    Select 'B18FA7F1-6EAA-4F48-B949-850F28D404FF', 'Spain' union \r\n    Select '92D1DC15-293F-485C-BF11-89F1F8CAC8A4', 'Gabon' union \r\n    Select 'F96C6543-83FE-499C-B06F-8DFBF1DE9B09', 'Myanmar' union \r\n    Select '9D208012-47F1-4D07-BD0B-9452A8A7FA64', 'Netherlands' union \r\n    Select '50CC2E57-CE21-4F77-A045-955FC487DAB5', 'Colombia' union \r\n    Select 'BB03198D-80E7-44C8-9944-9A430DADB28B', 'Qatar' union \r\n    Select '2DE84440-8D51-409A-AB83-9A53F79C3748', 'Brazil' union \r\n    Select 'BE7B6CF1-9735-49FE-9F72-A0CA1747FDF6', 'Asia' union \r\n    Select 'F4C13630-D69B-44D8-8695-A24CB0C3A273', 'Germany' union \r\n    Select '366F8A30-870D-4DA1-8B4F-A33FF64F3096', 'Congo, The Democratic Republic of the' union \r\n    Select '2BFE289E-8E60-4B39-BCE2-A3E3838CAE13', 'Puerto Rico' union \r\n    Select 'A35C0353-FDB9-4306-8777-A591CBC9F603', 'Kuwait' union \r\n    Select 'E1796D45-1C3A-46A7-8BD7-A62D030FBE36', 'Hungary' union \r\n    Select '7E543277-5D04-4577-835D-A7512DE441A8', 'Libya' union \r\n    Select 'DA3A869B-01A1-4A66-8DBA-A92BA20A22A3', 'Ecuador' union \r\n    Select 'A0FBC350-0CA7-4279-8DE6-AA4608A8CF9D', 'Honduras' union \r\n    Select '910A34DE-6AE0-4E2C-B58A-AC1CD9546B60', 'Canada' union \r\n    Select '2B3648AB-F413-49C4-97B8-AF37FD8735C7', 'Peru' union \r\n    Select '4C175BB7-3E32-4DE5-A519-B32260FA95DC', 'Mexico' union \r\n    Select '86DFB79F-1C2D-4744-A9B0-B87C2469D30D', 'Uganda' union \r\n    Select 'F1E6CD7A-A2EE-4A5E-89F6-BB01B5929077', 'Denmark' union \r\n    Select '42FA9678-CEDB-46BD-8BAE-BE374CD5CBB7', 'Congo, The Republic of the' union \r\n    Select 'BF5F6377-A748-4065-B1DD-BE71D47AF6D0', 'Romania' union \r\n    Select '9A81E2A8-334E-41DD-843F-C09E5E7E4E6A', 'Georgia' union \r\n    Select '38E06442-3107-40FA-9ED8-C436893CCF21', 'Costa Rica' union \r\n    Select '2D76605B-86B5-40FF-9A71-C4893E5916FB', 'United States' union \r\n    Select '466AA62A-7E3D-4C80-88BE-C7EA8416DA03', 'British Virgin Islands' union \r\n    Select 'DDB7C070-09D0-4517-88E0-CA6FD5646CA0', 'Poland' union \r\n    Select 'E339FBC0-711C-451A-A7D2-CBB7F883BA67', 'Mozambique' union \r\n    Select 'F843F3BB-4820-4EDA-BB5C-D5636CD2D532', 'Egypt' union \r\n    Select '223B88FD-69EA-4A4B-B21D-D725693D61F5', 'Angola' union \r\n    Select '3B12AEE6-D695-4F14-94E7-DA4FFE183D29', 'Oman' union \r\n    Select '1DD60AC9-2E5A-421C-97E9-DC26AB9F5E61', 'Luxembourg' union \r\n    Select '0A979A1A-7BCC-4540-BB25-DCEC89DFAF31', 'Chile' union \r\n    Select '81E875E5-6392-45E7-9104-DD50F7F307C5', 'Iraq' union \r\n    Select '920093F8-8A30-4895-8481-DDCC68CEEE3C', 'Viet Nam' union \r\n    Select '782DEB1D-31EB-4F49-9EB8-DE5FA4609954', 'Czech Republic' union \r\n    Select 'E8989E1B-8013-4B57-BF35-DFA9521F3491', 'Singapore' union \r\n    Select '2FAA3F54-C7F9-4F79-BEC4-E241B3BC4788', 'Saudi Arabia' union \r\n    Select 'D172FD46-9993-4FC3-83AB-E2F55A7721CB', 'Barbados' union \r\n    Select 'C82C9859-DEAB-4184-B609-E336E4C20A16', 'Cayman Islands' union \r\n    Select '0BA54706-9003-4F5F-8F6B-E39308FFFF96', 'Japan' union \r\n    Select '0B4D1AFD-007B-495E-9285-E8C7489068F2', 'Gibraltar' union \r\n    Select '63142716-400A-4866-AAA1-E9493F9674E1', 'Kenya' union \r\n    Select 'B6A3467B-C0A0-4177-AEA4-EB9598E382DB', 'Switzerland' union \r\n    Select 'AACF9CFF-2721-43AC-B6BC-EDC1E166A8EE', 'Australia' union \r\n    Select '10BEAE98-4504-4611-A83E-F12BEA302BEB', 'Italy' union \r\n    Select '97963F8D-1A49-48B2-99B8-F5EEE012A233', 'Guyana' union \r\n    Select 'C4197838-C032-4AAF-8A9B-FACAB71A4398', 'France' union \r\n    Select '8BB66470-F47D-4A9D-A808-FE885F235BF9', 'Ghana' \r\n);\r\n\r\ncreate table if not exists migration_country_mapping as (\r\n    select rpc.name as recoveryPlannerCountryName, pc.CountryTypeName, pc.CountryTypeId \r\n    from  T_COUNTRY rpc\r\n    join migration_preparis_userCountry pc on rpc.name = pc.CountryTypeName\r\n        or rpc.name = case \r\n                        when pc.CountryTypeName = 'Macau' then 'Macao' \r\n                        when pc.CountryTypeName = 'United States Virgin Islands' then 'Virgin Islands, U.S.'  \r\n                        when pc.CountryTypeName = 'Congo, The Republic of the' then 'Congo' \r\n                        when pc.CountryTypeName = 'Virgin Islands, British' then 'British Virgin Islands' \r\n                    end\r\n);\r\n\r\n\r\n/*  ADDRESSES */\r\n\r\ndrop table if exists migration_all_userAddresses;\r\n\r\ncreate table migration_all_userAddresses as (\r\n    select \r\n        (select uuid()) as newAddressId\r\n        , mud.newUserId\r\n        , mud.userId\r\n        , ci.id as rpAddressId\r\n        , ct.name  \r\n        , cast(AES_DECRYPT(ci.line1, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) line1\r\n        , cast(AES_DECRYPT(ci.line2, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) line2\r\n        , cast(AES_DECRYPT(ci.city, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) city\r\n        , cast(AES_DECRYPT(ci.state, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) state\r\n        , cast(AES_DECRYPT(ci.zip, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) zip\r\n        , mcm.recoveryPlannerCountryName\r\n        , mcm.CountryTypeName\r\n        , case when mcm.CountryTypeId is NULL or mcm.CountryTypeId = '' then '2D76605B-86B5-40FF-9A71-C4893E5916FB' \r\n            else mcm.CountryTypeId\r\n            end as CountryTypeId\r\n        , cast(replace(ci.latitude,',','') as float) as latitude\r\n        , cast(replace(ci.longitude,',','') as float) as longitude\r\n    from migration_user_data mud\r\n    LEFT JOIN T_CONTACT_INFO ci ON mud.userId = ci.owner_id\r\n    JOIN T_CONTACT_TYPE ct ON ci.contact_type_id = ct.id\r\n    JOIN T_CONTACT_METHOD cm on ct.contact_method_id = cm.id\r\n    JOIN T_COUNTRY cic on ci.country_id = cic.id\r\n    LEFT JOIN migration_country_mapping mcm on mcm.recoveryPlannerCountryName = cic.name\r\n    where cm.name = 'Address' \r\n);\r\n\r\ndrop table if exists migration_userAddresses;\r\n\r\ncreate table migration_userAddresses as (\r\n    with home_addresses as (\r\n        select  min(rpAddressId) 'minHomeAddressId'\r\n            ,ua.newAddressId\r\n            ,ua.newUserId\r\n            ,ua.name\r\n            ,ua.line1\r\n            ,ua.line2\r\n            ,ua.city\r\n            ,ua.state \r\n            ,ua.zip\r\n            ,ua.recoveryPlannerCountryName\r\n            ,ua.CountryTypeName\r\n            ,ua.CountryTypeId\r\n            ,ua.latitude\r\n            ,ua.longitude\r\n            ,'8BBE4178-8ADB-48AE-9035-6D683F855916' as 'userAddressTypeId'\r\n        from migration_all_userAddresses ua\r\n        where name = 'Home Address'\r\n        group by     \r\n            ua.newAddressId\r\n            ,ua.newUserId\r\n            ,ua.name\r\n            ,ua.line1\r\n            ,ua.line2\r\n            ,ua.city\r\n            ,ua.state \r\n            ,ua.zip\r\n            ,ua.recoveryPlannerCountryName\r\n            ,ua.CountryTypeName\r\n            ,ua.CountryTypeId\r\n            ,ua.latitude\r\n            ,ua.longitude\r\n    )\r\n    , business_addresses as (\r\n        select min(rpAddressId) 'minBusinessAddressId' \r\n            ,ua.newAddressId\r\n            ,ua.newUserId\r\n            ,ua.name\r\n            ,ua.line1\r\n            ,ua.line2\r\n            ,ua.city\r\n            ,ua.state \r\n            ,ua.zip\r\n            ,ua.recoveryPlannerCountryName\r\n            ,ua.CountryTypeName\r\n            ,ua.CountryTypeId\r\n            ,ua.latitude\r\n            ,ua.longitude\r\n            ,'8BBE4178-8ADB-48AE-9035-6D683F855916' as 'userAddressTypeId'\r\n        from migration_all_userAddresses ua \r\n        /* A user in Preparis is only allowed a single address. By convention it is generally the home address. So, if they have to you can only map one of them. If they have a home address use that one. If the don’t have a home address use the business address. But we can’t map them both.*/\r\n        left join home_addresses ha on ua.newUserId = ha.newUserId\r\n        where ha.newUserId is null \r\n        and ua.name = 'Business Address'\r\n        group by ua.newAddressId\r\n            ,ua.newUserId\r\n            ,ua.name\r\n            ,ua.line1\r\n            ,ua.line2\r\n            ,ua.city\r\n            ,ua.state \r\n            ,ua.zip\r\n            ,ua.recoveryPlannerCountryName\r\n            ,ua.CountryTypeName\r\n            ,ua.CountryTypeId\r\n            ,ua.latitude\r\n            ,ua.longitude\r\n    )\r\n    , combined_addresses as (\r\n        select * from home_addresses\r\n        UNION\r\n        select * from business_addresses\r\n    )\r\n    select \r\n    ROW_NUMBER() OVER (ORDER BY newAddressId) row_num\r\n    , ca.*\r\n    from combined_addresses ca\r\n);\r\n\r\n/*  USER PHONE NUMBERS  */\r\ndrop table if exists migration_all_userPhones;\r\n\r\ncreate table migration_all_userPhones as (\r\n    select \r\n        (select uuid()) as newPhoneId\r\n        , mud.newUserId\r\n        , ci.id as rpPhoneId\r\n        , ct.name  \r\n        , cast(AES_DECRYPT(ci.numberString, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) phoneNumber\r\n        , cast(AES_DECRYPT(ci.internationalCode, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) internationalCode\r\n        , cast(AES_DECRYPT(ci.extension, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) extension\r\n        , mcm.recoveryPlannerCountryName\r\n        , mcm.CountryTypeName\r\n        , case when mcm.CountryTypeId is NULL or mcm.CountryTypeId = '' then '2D76605B-86B5-40FF-9A71-C4893E5916FB' \r\n            else mcm.CountryTypeId\r\n            end as CountryTypeId \r\n        , case \r\n            when cic.code  != 'US' then  '8337fbb1-9a43-45eb-aafa-19c877e762fc' \r\n            else 'ffabdff8-4b2c-4655-9edc-8195c303419d' \r\n            end as 'phoneNumberSubTypeId'\r\n        /*\r\n        Follow the Preparis Mapping else follow the following logic. \r\n        Phone data, map lowest internal ID data per distribution type that has data.\r\n        rp.user.phone(Personal Distribution) = p.user.phone(Additional Personal Phone)\r\n        rp.user.phone(Business Distribution) = p.user.phone(Office Phone)\r\n\r\n\tdistributionType\r\n\t\t0 = business\r\n\t\t1 = personal\r\n\r\nphoneNumberTypeId\t                    phoneNumberTypeName\r\n9da9c256-8283-4a0a-bd3d-10df73e1f43b\tSecurity\r\n391dca7b-aac3-4875-94e2-2ef680c7f35f\tAdditional Personal\r\n20509910-5326-4057-b21f-5c694b314692\tOffice\r\n5322a58a-8683-449b-a562-b0577de3fa74\tEmergency\r\n5eec12d5-595f-4123-a613-c63e701ae993\tPersonal\r\n33f27328-8fee-4835-b020-cd6d48bb39cd\tMobile\r\n \r\n        */\r\n        , case \r\n            when ct.mappedName = 'preparisOfficePhone' then '20509910-5326-4057-b21f-5c694b314692'\r\n            when ct.mappedName = 'preparisPersonalPhone' then '5eec12d5-595f-4123-a613-c63e701ae993'\r\n            when ct.mappedName = 'preparisMobilePhone' then '33f27328-8fee-4835-b020-cd6d48bb39cd'\r\n            when ct.mappedName = 'preparisAdditionalMobilePhone' then '391dca7b-aac3-4875-94e2-2ef680c7f35f'\r\n            when cm.name = 'Cell Phone' and ct.distributionType = 0 then '33f27328-8fee-4835-b020-cd6d48bb39cd'\r\n            when cm.name = 'Cell Phone' and ct.distributionType = 1 then '5eec12d5-595f-4123-a613-c63e701ae993'\r\n            when cm.name = 'PHONE' and ct.distributionType = 0 then '20509910-5326-4057-b21f-5c694b314692'\r\n            when cm.name = 'PHONE' and ct.distributionType = 1 then '391dca7b-aac3-4875-94e2-2ef680c7f35f'\r\n            end as 'phoneNumberTypeId'\r\n        , ct.mappedName\r\n        , ct.distributionType\r\n    from migration_user_data mud\r\n    LEFT JOIN T_CONTACT_INFO ci ON mud.userId = ci.owner_id\r\n    JOIN T_CONTACT_TYPE ct ON ci.contact_type_id = ct.id\r\n    JOIN T_CONTACT_METHOD cm on ct.contact_method_id = cm.id\r\n    LEFT JOIN T_COUNTRY cic on ci.country_id = cic.id\r\n    LEFT JOIN migration_country_mapping mcm on mcm.recoveryPlannerCountryName = cic.name\r\n    where cm.name in ('PHONE', 'Cell Phone') \r\n);\r\n\r\ndrop table if exists migration_configuredUserPhones;\r\n\r\ncreate table migration_configuredUserPhones as (\r\n    with home_phones as (\r\n        select  min(rpPhoneId) 'minPhoneId'\r\n            , newPhoneId\r\n            , newUserId\r\n            , name\r\n            , phoneNumber\r\n            , internationalCode\r\n            , extension\r\n            , recoveryPlannerCountryName\r\n            , CountryTypeName\r\n            , CountryTypeId\r\n            , phoneNumberSubTypeId\r\n            , phoneNumberTypeId\r\n        from migration_all_userPhones\r\n        where phoneNumberTypeId = '5eec12d5-595f-4123-a613-c63e701ae993'\r\n        group by     \r\n            newPhoneId\r\n            , newUserId\r\n            , name\r\n            , phoneNumber\r\n            , internationalCode\r\n            , extension\r\n            , recoveryPlannerCountryName\r\n            , CountryTypeName\r\n            , CountryTypeId\r\n            , phoneNumberSubTypeId\r\n            , phoneNumberTypeId\r\n    )\r\n    , business_phones as (\r\n        select  min(rpPhoneId) 'minPhoneId'\r\n            , newPhoneId\r\n            , newUserId\r\n            , name\r\n            , phoneNumber\r\n            , internationalCode\r\n            , extension\r\n            , recoveryPlannerCountryName\r\n            , CountryTypeName\r\n            , CountryTypeId\r\n            , phoneNumberSubTypeId\r\n            , phoneNumberTypeId\r\n        from migration_all_userPhones\r\n        where phoneNumberTypeId = '20509910-5326-4057-b21f-5c694b314692'\r\n        group by     \r\n            newPhoneId\r\n            , newUserId\r\n            , name\r\n            , phoneNumber\r\n            , internationalCode\r\n            , extension\r\n            , recoveryPlannerCountryName\r\n            , CountryTypeName\r\n            , CountryTypeId\r\n            , phoneNumberSubTypeId\r\n            , phoneNumberTypeId\r\n        )\r\n    , mobile_phones as (\r\n        select  min(rpPhoneId) 'minPhoneId'\r\n            , newPhoneId\r\n            , newUserId\r\n            , name\r\n            , phoneNumber\r\n            , internationalCode\r\n            , extension\r\n            , recoveryPlannerCountryName\r\n            , CountryTypeName\r\n            , CountryTypeId\r\n            , phoneNumberSubTypeId\r\n            , phoneNumberTypeId\r\n        from migration_all_userPhones\r\n        where phoneNumberTypeId = '33f27328-8fee-4835-b020-cd6d48bb39cd'\r\n        group by     \r\n            newPhoneId\r\n            , newUserId\r\n            , name\r\n            , phoneNumber\r\n            , internationalCode\r\n            , extension\r\n            , recoveryPlannerCountryName\r\n            , CountryTypeName\r\n            , CountryTypeId\r\n            , phoneNumberSubTypeId\r\n            , phoneNumberTypeId\r\n        )\r\n    , additional_phones as (\r\n        select  min(rpPhoneId) 'minPhoneId'\r\n            , newPhoneId\r\n            , newUserId\r\n            , name\r\n            , phoneNumber\r\n            , internationalCode\r\n            , extension\r\n            , recoveryPlannerCountryName\r\n            , CountryTypeName\r\n            , CountryTypeId\r\n            , phoneNumberSubTypeId\r\n            , phoneNumberTypeId\r\n        from migration_all_userPhones\r\n        where phoneNumberTypeId = '391dca7b-aac3-4875-94e2-2ef680c7f35f'\r\n        group by     \r\n            newPhoneId\r\n            , newUserId\r\n            , name\r\n            , phoneNumber\r\n            , internationalCode\r\n            , extension\r\n            , recoveryPlannerCountryName\r\n            , CountryTypeName\r\n            , CountryTypeId\r\n            , phoneNumberSubTypeId\r\n            , phoneNumberTypeId\r\n        )\r\n    select * from home_phones\r\n        UNION\r\n    select * from business_phones\r\n        UNION\r\n    select * from mobile_phones\r\n        UNION\r\n    select * from additional_phones\r\n);\r\n\r\n/* 2/20/24...  When you do phone numbers for a user, create four types, regardless as to whether they have numbers for them (Mobile, Personal, Additional Personal, and Office). If there is not a number for that type, set the phonenumber to ''.*/\r\ndrop table if exists migration_UserPhones;\r\n\r\ncreate table migration_UserPhones as (\r\n        \r\n    with userConfiguredPhoneNumbers as (\r\n        select newUserId \r\n        , phoneNumberTypeId\r\n        , case\r\n            when phoneNumberTypeId = '20509910-5326-4057-b21f-5c694b314692' then 'preparisOfficePhone'\r\n            when phoneNumberTypeId = '5eec12d5-595f-4123-a613-c63e701ae993' then 'preparisPersonalPhone' \r\n            when phoneNumberTypeId = '33f27328-8fee-4835-b020-cd6d48bb39cd' then 'preparisMobilePhone'\r\n            when phoneNumberTypeId = '391dca7b-aac3-4875-94e2-2ef680c7f35f' then 'preparisAdditionalMobilePhone'\r\n            END as phonenumberTypeName\r\n        , phoneNumber\r\n        , phoneNumberSubTypeId\r\n        , extension\r\n        from migration_configuredUserPhones\r\n    )\r\n    , userOfficePhoneNumbers as (\r\n        select * from userConfiguredPhoneNumbers where phonenumberTypeName = 'preparisOfficePhone'\r\n    )\r\n    , newUserOfficePhoneNumbers as (\r\n        select mud.newUserId\r\n        , '20509910-5326-4057-b21f-5c694b314692' phoneNumberTypeId\r\n        , 'preparisOfficePhone' phonenumberTypeName\r\n        , '' phoneNumber\r\n        , '8337fbb1-9a43-45eb-aafa-19c877e762fc' phoneNumberSubTypeId\r\n        , '' extension\r\n        from migration_user_data mud\r\n        left join userOfficePhoneNumbers upn on mud.newUserId = upn.newUserId\r\n        where upn.newuserid is NULL\r\n    )\r\n    , userPersonalPhoneNumbers as (\r\n        select * from userConfiguredPhoneNumbers where phonenumberTypeName = 'preparisPersonalPhone'\r\n    )\r\n    , newUserPersonalPhoneNumbers as (\r\n        select mud.newUserId\r\n        , '5eec12d5-595f-4123-a613-c63e701ae993' phoneNumberTypeId\r\n        , 'preparisPersonalPhone' phonenumberTypeName\r\n        , '' phoneNumber\r\n        , '8337fbb1-9a43-45eb-aafa-19c877e762fc' phoneNumberSubTypeId\r\n        , '' extension\r\n        from migration_user_data mud\r\n        left join userPersonalPhoneNumbers upn on mud.newUserId = upn.newUserId\r\n        where upn.newuserid is NULL\r\n    )\r\n    , userMobilePhoneNumbers as (\r\n        select * from userConfiguredPhoneNumbers where phonenumberTypeName = 'preparisMobilePhone'\r\n    )\r\n    , newUserMobilePhoneNumbers as (\r\n        select mud.newUserId\r\n        , '33f27328-8fee-4835-b020-cd6d48bb39cd' phoneNumberTypeId\r\n        , 'preparisMobilePhone' phonenumberTypeName\r\n        , '' phoneNumber\r\n        , '8337fbb1-9a43-45eb-aafa-19c877e762fc' phoneNumberSubTypeId\r\n        , '' extension\r\n        from migration_user_data mud\r\n        left join userMobilePhoneNumbers upn on mud.newUserId = upn.newUserId\r\n        where upn.newuserid is NULL\r\n    )\r\n    , userAdditionalMobilePhoneNumbers as (\r\n        select * from userConfiguredPhoneNumbers where phonenumberTypeName = 'preparisAdditionalMobilePhone'\r\n    )\r\n    , newUserAdditionalMobilePhoneNumbers as (\r\n        select mud.newUserId\r\n        , '391dca7b-aac3-4875-94e2-2ef680c7f35f' phoneNumberTypeId\r\n        , 'preparisAdditionalMobilePhone' phonenumberTypeName\r\n        , '' phoneNumber\r\n        , '8337fbb1-9a43-45eb-aafa-19c877e762fc' phoneNumberSubTypeId\r\n        , '' extension\r\n        from migration_user_data mud\r\n        left join userAdditionalMobilePhoneNumbers upn on mud.newUserId = upn.newUserId\r\n        where upn.newuserid is NULL\r\n    )\r\n    , combined_phone_data as (\r\n        select *,  (SELECT uuid()) as newPhoneId from userOfficePhoneNumbers\r\n        UNION\r\n        select *,  (SELECT uuid()) as newPhoneId from newUserOfficePhoneNumbers\r\n        UNION\r\n        select *,  (SELECT uuid()) as newPhoneId from userPersonalPhoneNumbers\r\n        UNION\r\n        select *,  (SELECT uuid()) as newPhoneId from newUserPersonalPhoneNumbers\r\n        UNION\r\n        select *,  (SELECT uuid()) as newPhoneId from userMobilePhoneNumbers\r\n        UNION\r\n        select *,  (SELECT uuid()) as newPhoneId from newUserMobilePhoneNumbers\r\n        UNION\r\n        select *,  (SELECT uuid()) as newPhoneId from userAdditionalMobilePhoneNumbers\r\n        UNION\r\n        select *,  (SELECT uuid()) as newPhoneId from newUserAdditionalMobilePhoneNumbers\r\n    )\r\n    select \r\n    ROW_NUMBER() OVER (ORDER BY newPhoneId) row_num\r\n    , cpd.*\r\n    from combined_phone_data cpd\r\n);\r\n\r\n\r\n\r\n/*  USER LOCATION MAPPING => migration_user_primary_site_data */\r\n\r\ndrop table if exists migration_all_user_isPrimary_data ;\r\n\r\ncreate table migration_all_user_isPrimary_data as (\r\n    with migration_all_user_isPrimary_data as (\r\n        select user_id, site_id, isPrimaryForUser, concat(cast(user_id as char),'_',cast(site_id as char)) as composite_key\r\n        from T_USER_SITE\r\n        order by user_id\r\n    )\r\n    select * from migration_all_user_isPrimary_data\r\n);\r\n\r\n/*\r\nselect * from migration_all_user_isPrimary_data\r\n*/\r\n\r\n\r\ndrop table if exists migration_user_without_primary_site_data ;\r\ncreate table migration_user_without_primary_site_data as (\r\n    with userSiteCounts as (\r\n        select distinct user_id\r\n        , (select count(isPrimaryForUser) from migration_all_user_isPrimary_data where user_id = upd.user_id and isPrimaryForUser = 1) primaryCount\r\n        , (select count(isPrimaryForUser) from migration_all_user_isPrimary_data where user_id = upd.user_id and isPrimaryForUser = 0) secondaryCount\r\n        from migration_all_user_isPrimary_data upd\r\n    )\r\n    , users_without_primary as (\r\n        select user_id from userSiteCounts where primaryCount = 0\r\n    )\r\n    select upd.user_id, min(upd.site_id) as min_site_id\r\n    from migration_all_user_isPrimary_data upd\r\n    join users_without_primary uwp on upd.user_id = uwp.user_id\r\n    group by upd.user_id\r\n);\r\n\r\n/*\r\nselect * from migration_user_without_primary_site_data;\r\n*/\r\n\r\n\r\ndrop table if exists migration_user_min_primary_site_data ;\r\ncreate table migration_user_min_primary_site_data as (\r\n    with  migration_user_min_primary_site_data as(\r\n        select min(usd.site_id) site_id, usd.user_id\r\n        from migration_all_user_isPrimary_data usd\r\n        where usd.isPrimaryForUser = 1\r\n        group by usd.user_id\r\n    )\r\n    select * from migration_user_min_primary_site_data\r\n);\r\n/*\r\nselect * from migration_user_min_primary_site_data\r\n*/\r\n\r\ndrop table if exists migration_combined_primary_site_data ;\r\ncreate table migration_combined_primary_site_data as (\r\n    select * from migration_user_min_primary_site_data\r\n    UNION\r\n    select * from migration_user_without_primary_site_data\r\n);\r\n\r\n/*\r\nselect * from migration_combined_primary_site_data;\r\n*/\r\n\r\ndrop table if exists migration_combined_primary_site_data_ck ;\r\ncreate table migration_combined_primary_site_data_ck as (\r\n    with migration_combined_primary_site_data_ck as (\r\n        select *, concat(cast(user_id as char),'_',cast(site_id as char)) as composite_key from migration_combined_primary_site_data\r\n    )\r\n    select * from migration_combined_primary_site_data_ck\r\n);\r\n/*\r\nselect * from migration_combined_primary_site_data_ck\r\n*/\r\n\r\n\r\n\r\ndrop table if exists migration_not_user_primary_site ;\r\ncreate table migration_not_user_primary_site as (\r\n    with migration_not_user_primary_site as(\r\n        select usd.site_id, usd.user_id \r\n        from migration_all_user_isPrimary_data usd\r\n        left join migration_combined_primary_site_data_ck psd on usd.composite_key = psd.composite_key\r\n        where psd.composite_key is null\r\n    )\r\n    select * from migration_not_user_primary_site\r\n);\r\n/*\r\nselect * from migration_not_user_primary_site\r\n20\r\n*/\r\n\r\n\r\ndrop table if exists migration_all_user_isManager_data ;\r\ncreate table migration_all_user_isManager_data as (\r\n    with migration_all_user_isManager_data as (\r\n        select us.user_id, us.site_id, concat(cast(us.user_id as char),'_',cast(us.site_id as char)) as composite_key\r\n        , case ud.role when 'Manager' then 1 else 0 end as 'isManager'\r\n        from T_USER_SITE us\r\n        join migration_user_data ud on us.user_id = ud.userId \r\n        order by user_id\r\n    )\r\n    select * from migration_all_user_isManager_data\r\n);\r\n/*\r\nselect * from migration_all_user_isManager_data\r\n48\r\n*/\r\n\r\n\r\ndrop table if exists migration_user_min_isManager_data ;\r\ncreate table migration_user_min_isManager_data as (\r\n    with  migration_user_min_isManager_data as(\r\n        select min(uim.user_id) user_id, uim.site_id\r\n        from migration_all_user_isManager_data uim\r\n        where uim.isManager = 1\r\n        group by uim.site_id\r\n    )\r\n    select * from migration_user_min_isManager_data\r\n);\r\n/*\r\nselect * from migration_user_min_isManager_data\r\n8\r\n*/\r\n\r\n\r\ndrop table if exists migration_user_min_isManager_data_ck ;\r\ncreate table migration_user_min_isManager_data_ck as (\r\n    with  migration_user_min_isManager_data_ck as (\r\n        select *, concat(cast(user_id as char),'_',cast(site_id as char)) as composite_key from migration_user_min_isManager_data\r\n    )\r\n    select * from migration_user_min_isManager_data_ck\r\n);\r\n/*\r\nselect * from migration_user_min_isManager_data_ck\r\n8\r\n*/\r\n\r\n\r\n\r\ndrop table if exists migration_not_user_isManager ;\r\ncreate table migration_not_user_isManager as (\r\n    with  migration_not_user_isManager as(\r\n        select usd.site_id, usd.user_id \r\n        from migration_all_user_isManager_data usd\r\n        left join migration_user_min_isManager_data_ck uim on usd.composite_key = uim.composite_key\r\n        where uim.composite_key is null\r\n    )\r\n    select * from migration_not_user_isManager\r\n);\r\n/*\r\nselect * from migration_not_user_isManager\r\n40\r\n*/\r\n\r\ndrop table if exists migration_site_manager_data ;\r\ncreate table migration_site_manager_data as (\r\n    with migration_site_manager_data as (\r\n        select *, 1 isManager from migration_user_min_isManager_data\r\n        UNION\r\n        select *, 0 isManager from migration_not_user_isManager\r\n    )\r\n    select * from migration_site_manager_data\r\n);\r\n\r\n/*\r\nselect * from migration_site_manager_data\r\n48\r\n*/\r\n\r\n\r\ndrop table if exists migration_user_primary_site_data ;\r\ncreate table migration_user_primary_site_data as (\r\n    with migration_user_primary_site_data as (\r\n        select \r\n        (SELECT uuid()) as newEntityUserItemId\r\n        , sd.newSiteId\r\n        , ud.newUserId\r\n        , 1 as isPrimaryRelationship\r\n        , IFNULL(smd.isManager,0) isManager\r\n        from migration_combined_primary_site_data ups\r\n        left join migration_site_manager_data smd on ups.user_id = smd.user_id and ups.site_id = smd.site_id\r\n            join migration_user_data ud on ups.user_id = ud.userId \r\n            JOIN migration_site_data sd on ups.site_id = sd.id\r\n    )\r\n    select * from migration_user_primary_site_data\r\n);\r\n/*\r\nselect * from migration_user_primary_site_data\r\n28\r\n*/\r\n\r\n\r\ndrop table if exists migration_not_user_primary_site_data ;\r\ncreate table migration_not_user_primary_site_data as (\r\n    with migration_not_user_primary_site_data as (\r\n        select \r\n        (SELECT uuid()) as newEntityUserItemId\r\n        , sd.newSiteId\r\n        , ud.newUserId\r\n        , 0 as isPrimaryRelationship\r\n        , IFNULL(smd.isManager,0) isManager\r\n        from migration_not_user_primary_site ups\r\n        left join migration_site_manager_data smd on ups.user_id = smd.user_id and ups.site_id = smd.site_id\r\n            join migration_user_data ud on ups.user_id = ud.userId \r\n            JOIN migration_site_data sd on ups.site_id = sd.id\r\n    )\r\n    select * from migration_not_user_primary_site_data\r\n);\r\n\r\n/*\r\nselect * from migration_not_user_primary_site_data\r\n20\r\n*/\r\n\r\n/*\r\nWhen a user only has alternate sites, the one that has the lowest internal ID will be used as the primary location AND make sure that the selecte alertnate site is NOT added as an altern site.\r\n\r\nwhen a user exists in migration_not_user_primary_site_data\r\nAND \r\ndoes not exist in migration_user_site_data\r\n\r\nTHEN:\r\n    - create new table of distinct userids to operate on\r\n    - update isPrimaryRelationship in migration_not_user_primary_site_data to be 1\r\n*/\r\n\r\ndrop table if exists migration_user_to_update_primary ;\r\ncreate table migration_user_to_update_primary as (\r\n    select nup.newuserid \r\n    from migration_not_user_primary_site_data nup\r\n    left join migration_user_primary_site_data up on nup.newuserid = up.newuserid\r\n    where up.newuserid is null\r\n);\r\n\r\nupdate migration_not_user_primary_site_data \r\nset isPrimaryRelationship  = 1\r\nwhere newuserid in (select newuserid from migration_user_to_update_primary);\r\n\r\n\r\ndrop table if exists migration_user_site_data;\r\n\r\ncreate table migration_user_site_data as (\r\n    with combined_user_site_data as(\r\n        select * from migration_user_primary_site_data\r\n        UNION\r\n        select * from migration_not_user_primary_site_data\r\n    )\r\n    select ROW_NUMBER() OVER (ORDER BY newEntityUserItemId) row_num\r\n    , cusd.* \r\n    from combined_user_site_data cusd\r\n);\r\n\r\n/*\r\nselect * from migration_user_site_data;\r\n48\r\n*/\r\n/*\r\nselect newSiteId, count(isManager) \r\nfrom migration_user_site_data\r\nwhere isManager = 1\r\ngroup by newSiteId\r\n;\r\n*/\r\n\r\n/*  DEPARTMENT */\r\n\r\ndrop table if exists migration_department;\r\n\r\ncreate table migration_department as\r\nselect *\r\n, (SELECT uuid()) as newDepartmentId\r\nfrom t_department;\r\n\r\ndrop table if exists migration_department_hierarchy;\r\n/*\r\ncreate table migration_department_hierarchy as\r\nselect d.id department_id, d.newDepartmentId, d.parent_id department_parent_id, d.name, d.description\r\n, p.id as parent_id\r\n, p.name as parent_name\r\n, p.newDepartmentId as parent_newDepartmentId\r\nfrom migration_department  d\r\njoin migration_department p on  p.id = d.parent_id\r\n;\r\n*/\r\ndrop table if exists migration_department_users;\r\n\r\ncreate table migration_department_users as(\r\n    with combined_department_users as(\r\n        select \r\n        (SELECT uuid()) as newEntityUserItemId\r\n        , ud.user_id\r\n        , mud.newUserId\r\n        , ud.department_id \r\n        , newDepartmentId\r\n        from T_USER_DEPARTMENT ud\r\n        join migration_user_data mud on mud.userid = ud.user_id\r\n        join migration_department md on md.id = ud.department_id\r\n    )\r\n    select \r\n    ROW_NUMBER() OVER (ORDER BY newEntityUserItemId) row_num\r\n    , cdu.*\r\n    from combined_department_users cdu\r\n);\r\n\r\n\r\n/* GROUP*/\r\ndrop table if exists migration_groups;\r\n\r\ncreate table migration_groups as (\r\n    with notification_name_count as (\r\n        select distinct nl.name, count(id) idCount\r\n        from T_NOTIFICATION_LIST nl\r\n        group by nl.name\r\n    )\r\n    , notification_name_no_dupe as (\r\n        select nnc.name, nl.id, description\r\n        from notification_name_count nnc\r\n        join T_NOTIFICATION_LIST nl on nnc.name = nl.name\r\n        where idCount = 1\r\n    )\r\n    , notification_name_dupe_min as (\r\n        select min(nl.id) as id, nnc.name  \r\n        from notification_name_count nnc\r\n        join T_NOTIFICATION_LIST nl on nnc.name = nl.name\r\n        where nnc.idCount > 1\r\n        group by  nnc.name   \r\n    )\r\n\r\n    , notification_name_dupes as (\r\n        select nnc.name, nl.id, concat(nnc.name,'_',cast(nl.id as char)) as dupeName, nl.description  \r\n        from notification_name_count nnc\r\n        join T_NOTIFICATION_LIST nl on nnc.name = nl.name\r\n        left join notification_name_dupe_min ndm on nl.id = ndm.id\r\n        where nnc.idCount > 1\r\n        and ndm.id is null\r\n    )\r\n    , migration_group_names as(\r\n        select (select uuid()) as newGroupId, name, id, description  from notification_name_no_dupe\r\n        union\r\n        select (select uuid()) as newGroupId, dn.name, dn.id, nl.description  from notification_name_dupe_min dn join T_NOTIFICATION_LIST nl on dn.id = nl.id\r\n        union\r\n        select (select uuid()) as newGroupId, dupeName, id, description  from notification_name_dupes\r\n    )\r\n    \r\n    select distinct mgn.* \r\n    from migration_group_names mgn\r\n    join t_notification_list_contact nlc on mgn.id = nlc.notification_list_id\r\n\r\n);\r\n\r\ndrop table if exists migration_group_users;\r\ncreate table migration_group_users as (\r\n    with group_user_data as (\r\n        select nlm.*, mud.newUserId, mud.userId, (select uuid()) as newEntityUserItemId\r\n        from migration_groups nlm\r\n        join t_notification_list_contact nlc on nlm.id = nlc.notification_list_id\r\n        join migration_user_data mud on nlc.contact_id = mud.userId\r\n    )\r\n    select\r\n    ROW_NUMBER() OVER (ORDER BY newEntityUserItemId) row_num\r\n    , gud.* \r\n    from group_user_data gud\r\n);\r\n\r\n\r\n/*  FUNCTIONAL AREA  */\r\n\r\ndrop table if exists migration_bcPortalFunctionalArea_leaderUserId;\r\n\r\ncreate table migration_bcPortalFunctionalArea_leaderUserId as (\r\n    with admin_department_user as( \r\n        select min(mdu.user_id) as user_id, mdu.department_id\r\n        from migration_department_users mdu\r\n        join migration_user_data mud on mdu.user_id = mud.userid\r\n        where mud.role = 'ADMIN'\r\n        group by mdu.department_id\r\n    )\r\n    , not_admin_department_user as (\r\n        select min(mdu.user_id) as user_id, mdu.department_id\r\n        from migration_department_users mdu\r\n        join migration_user_data mud on mdu.user_id = mud.userid\r\n        left join admin_department_user adu on mdu.department_id = adu.department_id\r\n        where adu.department_id is null\r\n        group by  mdu.department_id\r\n    )\r\n    , lead_data as (\r\n    select * from admin_department_user\r\n    union \r\n    select * from not_admin_department_user\r\n    )\r\n\r\n    select mdu.user_id, mdu.newUserId as leaderUserId, mdu.department_id\r\n    from migration_department_users mdu\r\n    join lead_data ld on ld.user_id = mdu.user_id and ld.department_id = mdu.department_id\r\n    order by mdu.department_id\r\n\r\n);\r\n\r\ndrop table if exists migration_PortalFunctionalArea_data;\r\n\r\ncreate table migration_PortalFunctionalArea_data as (\r\n    with PortalFunctionalArea_data as (\r\n        select distinct \r\n        md.name as portalFunctionalAreaName\r\n        , md.description as portalFunctionalAreaDescription\r\n        , lu.leaderUserId\r\n        , fd.DEPARTMENT_ID\r\n        , md.newDepartmentId\r\n        from migration_department md\r\n        join t_function_department fd on md.ID = fd.DEPARTMENT_ID\r\n        join t_function f on fd.FUNCTION_ID = f.ID\r\n        left join migration_bcPortalFunctionalArea_leaderUserId lu on fd.DEPARTMENT_ID = lu.department_id\r\n    )\r\n    select\r\n        fad.* \r\n        , (Select uuid()) as portalFunctionalAreaId\r\n        , (select uuid()) as bcPortalFunctionalAreaToDepartmentId\r\n    from PortalFunctionalArea_data fad\r\n);\r\n\r\n\r\ndrop table if exists migration_FunctionalArea_data;\r\n\r\ncreate table migration_FunctionalArea_data as (\r\n    select distinct \r\n    md.name as portalFunctionalAreaName\r\n    , md.description as portalFunctionalAreaDescription\r\n    , lu.leaderUserId\r\n    , fd.DEPARTMENT_ID\r\n    , md.newDepartmentId\r\n    from migration_department md\r\n    join t_function_department fd on md.ID = fd.DEPARTMENT_ID\r\n    join t_function f on fd.FUNCTION_ID = f.ID\r\n    left join migration_bcPortalFunctionalArea_leaderUserId lu on fd.DEPARTMENT_ID = lu.department_id\r\n);\r\n\r\ndrop table if exists migration_PortalProcess_data;\r\n\r\ncreate table migration_PortalProcess_data as (\r\n    select distinct \r\n    (Select uuid()) as portalProcessId\r\n    , f.name as functionalAreaName\r\n    , pfa.portalFunctionalAreaName\r\n    , pfa.portalFunctionalAreaId\r\n    , f.description as portalFunctionalAreaDescription\r\n    from migration_PortalFunctionalArea_data pfa\r\n    join t_function_department fd on pfa.department_ID = fd.DEPARTMENT_ID\r\n    join t_function f on fd.FUNCTION_ID = f.ID\r\n);\r\n\r\n\r\n/*  Map the Recovery Planner site types to Preparis location \"location types\" field.  MG-14*/\r\n\r\ndrop table if exists migration_site_type;\r\n\r\ncreate table migration_site_type as (\r\n    select ts.id, ts.primarySite, ts.alternateSite \r\n    , msd.newSiteId\r\n    , case \r\n        when ts.primarySite = 1 and ts.alternateSite = 1 then '2a136e36-be6d-4d2c-bacf-ee0a3cd08479'\r\n        when ts.primarySite = 1 then 'c97f4496-6d74-45eb-a742-bd6c77dad64f' \r\n        when ts.alternateSite = 1 then 'e7ecddd7-e040-4c92-8359-1861522561a1'\r\n        end as azstudioSettings_value\r\n    , (SELECT uuid()) as newSettingId \r\n    from T_SITE ts\r\n    join migration_site_data msd on ts.id = msd.id\r\n);\r\n\r\n\r\n\r\n\r\n/* notification lists  MG-15 */\r\ndrop table if exists migration_notification_list_names;\r\n\r\n\r\nselect 'DONE' as 'Lookup Activity Hack';",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Execute Pipeline Create Preparis Portal",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Set variable CompanyName",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create Preparis Portal",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"CompanyName": {
+							"value": "@variables('CompanyName')",
+							"type": "Expression"
+						},
+						"PortalEntityID": {
+							"value": "@variables('PortalEntityID')",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Create new EntityID",
+				"description": "Create the new EntityID and put into a variable that can be re-used without doing a lookup. ",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Build Migration Tables",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "PortalEntityID",
+					"value": {
+						"value": "@{guid()}",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Create Preparis Users",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Build migration_users_without_site table",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create Users Partitioned",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"PortalEntityID": {
+							"value": "@variables('PortalEntityID')",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						},
+						"rp_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						},
+						"rp_db_server": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Execute Create Portal Entities",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Build migration_users_without_site table",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create Portal Entities",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"PortalEntityID": {
+							"value": "@variables('PortalEntityID')",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						},
+						"db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						},
+						"db_server": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Post Portal and User Entities",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Create Preparis Users",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "Execute Create Portal Entities",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Create Post Portal and User entities",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"rp_server_name": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						},
+						"rp_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						},
+						"company_name": {
+							"value": "@variables('CompanyName')",
+							"type": "Expression"
+						},
+						"CreatedByGUID": {
+							"value": "@pipeline().parameters.CreatedByGUID",
+							"type": "Expression"
+						},
+						"DefaultLocationId": {
+							"value": "@variables('DefaultLocationId')",
+							"type": "Expression"
+						},
+						"PortalEntityID": {
+							"value": "@variables('PortalEntityID')",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set Default Location ID",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get Default Location GUID",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "DefaultLocationId",
+					"value": {
+						"value": "@activity('Get Default Location GUID').output.firstRow.entityId",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Get Default Location GUID",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Create Preparis Portal",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "select e.entityId\nfrom azstudioEntityEntities e \nJOIN azstudioEntityEntityTypes et on e.entityTypeId = et.entityTypeId\nJOIN azstudioEntityStatusTypes st on e.entityStatusTypeId = st.entityStatusTypeId\nwhere entityName =  '@{variables('CompanyName')} - default location'\nand et.entityTypeName = 'Location'\nand st.entityStatusTypeName = 'Active'",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "Preparis",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "Create DefaultLocationId table",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Set Default Location ID",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": {
+							"value": "drop table if exists migration_defaultLocationId;\n\ncreate table migration_defaultlocationID as(\n\tselect '@{variables('DefaultLocationId')}' as defaultLocationId\n);\n\nselect 'DONE' as 'LookupHack';",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					}
+				}
+			},
+			{
+				"name": "Execute Pipeline Get RP CompanyName",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Create new EntityID",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "Get RP CompanyName",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"rp_server_name": {
+							"value": "@pipeline().parameters.rp_server_name",
+							"type": "Expression"
+						},
+						"rp_db_name": {
+							"value": "@pipeline().parameters.rp_db_name",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Set variable CompanyName",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Execute Pipeline Get RP CompanyName",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "CompanyName",
+					"value": {
+						"value": "@activity('Execute Pipeline Get RP CompanyName').output.pipelineReturnValue.CompanyName",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Build migration_users_without_site table",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Create DefaultLocationId table",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "/*\npreparis requires a primary location\nIf a user does not have a location, use the default location and make it primary\n*/\ndrop table if exists migration_users_without_site;\n\ncreate table migration_users_without_site as (\n    with combined_users_without_site as (\n        select \n            (SELECT uuid()) as newEntityUserItemId\n            , (select defaultlocationid from migration_defaultLocationId) defaultLocationId\n            , ud.newUserId \n            , 1 as isPrimaryRelationship\n            , 0 isManager\n        from migration_user_data ud\n        left join migration_user_site_data usd on ud.newUserId = usd.newUSerId\n        where usd.NewUserId is null\n    )\n    select \n    ROW_NUMBER() OVER (ORDER BY newEntityUserItemId) row_num\n    , cuws.*\n    from combined_users_without_site cuws\n);\n\nselect 'DONE' as 'Lookup Hack';",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.rp_db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.rp_server_name",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			}
+		],
+		"parameters": {
+			"rp_server_name": {
+				"type": "string",
+				"defaultValue": "recovery-planner-mysql-server.mysql.database.azure.com"
+			},
+			"rp_db_name": {
+				"type": "string",
+				"defaultValue": "mercbank"
+			},
+			"CreatedByGUID": {
+				"type": "string",
+				"defaultValue": "7b5ea827-bcd7-4a8a-8807-fc7e94a93455"
+			}
+		},
+		"variables": {
+			"DefaultLocationId": {
+				"type": "String"
+			},
+			"PortalEntityID": {
+				"type": "String"
+			},
+			"CompanyName": {
+				"type": "String"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-26T12:44:00Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

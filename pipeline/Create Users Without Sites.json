@@ -1,0 +1,177 @@
+{
+	"name": "Create Users Without Sites",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup Users Without Sites",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": {
+							"value": "select * \nfrom migration_users_without_site\nwhere row_num between @{pipeline().parameters.iteration_start} and @{pipeline().parameters.iteration_stop}",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach UserAddress",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup Users Without Sites",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup Users Without Sites').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Append variable insert_statements",
+							"type": "AppendVariable",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "insert_statements",
+								"value": {
+									"value": "INSERT INTO [dbo].[azstudioEntityUsers]\n           ([entityUserItemId]\n           ,[entityId]\n           ,[userId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[isPrimaryRelationship]\n           ,[isManager])\n     VALUES\n           ('@{item().newEntityUserItemId}'\n           ,'@{item().defaultLocationId}'\n           ,'@{item().newUserId}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,'@{item().isPrimaryRelationship}'\n           ,'@{item().isManager}')",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Create default Location for users without Site in RP",
+							"type": "Script",
+							"state": "Inactive",
+							"onInactiveMarkAs": "Succeeded",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[azstudioEntityUsers]\n           ([entityUserItemId]\n           ,[entityId]\n           ,[userId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[isPrimaryRelationship]\n           ,[isManager])\n     VALUES\n           ('@{item().newEntityUserItemId}'\n           ,'@{item().defaultLocationId}'\n           ,'@{item().newUserId}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,CURRENT_TIMESTAMP\n           ,'@{pipeline().parameters.CreatedByGUID}'\n           ,'@{item().isPrimaryRelationship}'\n           ,'@{item().isManager}')",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Bulk Insert",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "ForEach UserAddress",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "@join(variables('insert_statements'),';')",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			}
+		],
+		"parameters": {
+			"PortalEntityID": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			},
+			"db_name": {
+				"type": "string"
+			},
+			"db_server": {
+				"type": "string"
+			},
+			"iteration_start": {
+				"type": "int"
+			},
+			"iteration_stop": {
+				"type": "int"
+			}
+		},
+		"variables": {
+			"insert_statements": {
+				"type": "Array"
+			}
+		},
+		"folder": {
+			"name": "Users"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T14:45:26Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

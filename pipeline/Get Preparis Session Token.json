@@ -1,0 +1,156 @@
+{
+	"name": "Get Preparis Session Token",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get Preparis Token",
+				"type": "WebActivity",
+				"dependsOn": [
+					{
+						"activity": "Set variable preparisUserPasswordEncoded",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"method": "POST",
+					"headers": {
+						"Content-Type": "application/json"
+					},
+					"url": {
+						"value": "@concat(pipeline().parameters.preparisBaseURL,'API/login')",
+						"type": "Expression"
+					},
+					"body": {
+						"value": "{\n    \"applicationId\": \"15871a25-1ab0-4c98-9a29-0f2e076c9adc\",\n    \"versionId\": \"39fd8b5d-5151-46d7-aca1-6c9f8f4cd153\",\n    \"clientTransactionKey\": \"00000\",\n    \"deviceIdAsBase64\": \"@{pipeline().parameters.preparisDeviceIdAsBase64}\",\n    \"token\": null,\n    \"entityId\": null,\n    \"rootEntityId\": null,\n    \"portalId\": null,\n    \"createdById\": null,\n    \"lastModifiedById\": null,\n    \"userNameAsBase64\": \"@{variables('preparisUserEncoded')}\", \n    \"passwordAsBase64\": \"@{variables('preparisUserPasswordEncoded')}\", \n    \"referrerSiteAsBase64\": \"bG9jYWxob3N0\",\n    \"userName\": null,\n    \"password\": null,\n    \"multifactorAuthPin\": \"\",\n    \"referrerSite\": null\n}",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set variable preparisUserPasswordEncoded",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Set variable preparisUserEncoded",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "preparisUserPasswordEncoded",
+					"value": {
+						"value": "@base64(pipeline().parameters.preparisUserPassword)",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set variable preparisUserEncoded",
+				"type": "SetVariable",
+				"dependsOn": [],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "preparisUserEncoded",
+					"value": {
+						"value": "@base64(pipeline().parameters.preparisUser)",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "Set variable preparisSessionToken",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get Preparis Token",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "pipelineReturnValue",
+					"value": [
+						{
+							"key": "preparisSessionToken",
+							"value": {
+								"type": "Expression",
+								"content": "@activity('Get Preparis Token').output.token"
+							}
+						},
+						{
+							"key": "preparisUserId",
+							"value": {
+								"type": "Expression",
+								"content": "@activity('Get Preparis Token').output.userId"
+							}
+						},
+						{
+							"key": "currentPortalId",
+							"value": {
+								"type": "Expression",
+								"content": "@activity('Get Preparis Token').output.currentPortalId"
+							}
+						}
+					],
+					"setSystemVariable": true
+				}
+			}
+		],
+		"parameters": {
+			"preparisUser": {
+				"type": "string",
+				"defaultValue": "migration@dispostable.com"
+			},
+			"preparisUserPassword": {
+				"type": "string",
+				"defaultValue": "Preparis123!"
+			},
+			"preparisBaseURL": {
+				"type": "string"
+			},
+			"preparisDeviceIdAsBase64": {
+				"type": "string"
+			}
+		},
+		"variables": {
+			"preparisUserEncoded": {
+				"type": "String"
+			},
+			"preparisUserPasswordEncoded": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "Documents"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T19:01:40Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

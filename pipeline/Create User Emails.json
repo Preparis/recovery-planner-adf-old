@@ -1,0 +1,177 @@
+{
+	"name": "Create User Emails",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup User Emails",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": {
+							"value": "select \nnewEmailId\n, newUserId\n, emailAddressTypeId\n, replace(email, '''','''''') email\nfrom migration_userEmails\nwhere row_num between @{pipeline().parameters.iteration_start} and @{pipeline().parameters.iteration_stop}",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference",
+						"parameters": {
+							"db_name": {
+								"value": "@pipeline().parameters.db_name",
+								"type": "Expression"
+							},
+							"server_name": {
+								"value": "@pipeline().parameters.db_server",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "ForEach User Email",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup User Emails",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup User Emails').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Append variable insert_statements",
+							"type": "AppendVariable",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "insert_statements",
+								"value": {
+									"value": "INSERT INTO [dbo].[ppuserEMailAddresses]\n           ([userEMailId]\n           ,[userId]\n           ,[emailTypeId]\n           ,[emailAddress]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[optOutEmail])\n     VALUES\n           ('@{item().newEmailId}'\n           ,'@{item().newUserId}'\n           ,'@{item().emailAddressTypeId}'\n           ,'@{item().email}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           ,0)",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Create User Email",
+							"type": "Script",
+							"state": "Inactive",
+							"onInactiveMarkAs": "Succeeded",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[ppuserEMailAddresses]\n           ([userEMailId]\n           ,[userId]\n           ,[emailTypeId]\n           ,[emailAddress]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[optOutEmail])\n     VALUES\n           ('@{item().newEmailId}'\n           ,'@{item().newUserId}'\n           ,'@{item().emailAddressTypeId}'\n           ,'@{item().email}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           , CURRENT_TIMESTAMP\n           , '@{pipeline().parameters.CreatedByGUID}'\n           ,0)",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Bulk Insert",
+				"type": "Script",
+				"dependsOn": [
+					{
+						"activity": "ForEach User Email",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"linkedServiceName": {
+					"referenceName": "AzureSqlDatabase_Preparis_dev",
+					"type": "LinkedServiceReference"
+				},
+				"typeProperties": {
+					"scripts": [
+						{
+							"type": "Query",
+							"text": {
+								"value": "@join(variables('insert_statements'),';')",
+								"type": "Expression"
+							}
+						}
+					],
+					"scriptBlockExecutionTimeout": "02:00:00"
+				}
+			}
+		],
+		"parameters": {
+			"PortalEntityID": {
+				"type": "string"
+			},
+			"CreatedByGUID": {
+				"type": "string"
+			},
+			"db_name": {
+				"type": "string"
+			},
+			"db_server": {
+				"type": "string"
+			},
+			"iteration_start": {
+				"type": "int"
+			},
+			"iteration_stop": {
+				"type": "int"
+			}
+		},
+		"variables": {
+			"insert_statements": {
+				"type": "Array"
+			}
+		},
+		"folder": {
+			"name": "Users"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-25T14:14:49Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

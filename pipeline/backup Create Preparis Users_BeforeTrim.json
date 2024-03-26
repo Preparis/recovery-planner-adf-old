@@ -1,0 +1,179 @@
+{
+	"name": "backup Create Preparis Users_BeforeTrim",
+	"properties": {
+		"activities": [
+			{
+				"name": "Get Recovery Planner Users",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureMySqlSource",
+						"query": "SELECT \n    (SELECT uuid()) as newUserId\n    , (SELECT uuid()) as entityUserItemId_portal\n    , (SELECT uuid()) as entityUserItemId_location\n    , IFNULL(c.name,'') as username\n    , c.firstName\n    , c.middleInitials\n    , c.lastName\n    , case u.role when 0 then 'SYSTEM' when 1 then 'PARTNER' when 2 THEN 'ADMIN' when 3 then 'MANAGER' when 4 then 'USER' when 5 then 'LISTED' end AS role\n    , case u.status when 0 then 'ACTIVE' when 1 then 'INACTIVE' when 2 then 'LOCKED' when 3 then 'TERMINATED' end AS status\n    , ct.name\n    , ci.email\n    , ci.primaryEmail\n    , cast(AES_DECRYPT(ci.line1, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) line1\n    , cast(AES_DECRYPT(ci.line2, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) line2\n    , cast(AES_DECRYPT(ci.city, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) city\n    , cast(AES_DECRYPT(ci.state, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) state\n    , cast(AES_DECRYPT(ci.zip, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) zip\n    , cast(AES_DECRYPT(ci.numberString, x'37a95c7d900e8ebb39c9d1b36cf448a5') as char(255)) numberString\n    , cic.name as contactInfoCountry\n    , ct.NAME as contactTypeName\n    , s.name as siteName\n    , sc.name as siteCountryName\n    , us.floor\n    , us.room\n    , us.seat\n    , u.currentLoginAttempts\n    , IFNULL(u.password,'') as password\n    , u.passwordExpired\n    , u.passwordLastUpdated\n    , u.twoFactorAuth\n    , u.twoFactorAuthSecret\n    , u.creationdate\n    , cast(s.latitude as float) as latitude\n    , cast(s.longitude as float) as longitude\n    , u.timezone\n    , c.externalID\n    , case u.timezone \n        when 'UTC' then '8fa8449a-4be5-4b8c-9bcd-c7f378a9f438'\n        when 'JST' then '8702ab86-8acc-468d-a735-f5ab8c8de4d5'\n        when 'CST' OR 'America/Chicago' then '19a4144b-76bd-42fd-baa8-bb528a814884'\n        when 'EST' OR 'America/New_York' then 'c16ab931-6dfa-40b0-ac2a-e404e725c8b9'\n        else concat('TimeZone', u.timezone, ' Not Yet Mapped')\n        END  as timeZoneId\nFROM T_CONTACT c\nLEFT JOIN T_USER u ON c.id = u.id\nJOIN T_CONTACT_INFO ci ON c.id = ci.owner_id\nJOIN T_CONTACT_TYPE ct ON ci.contact_type_id = ct.id\nJOIN T_CONTACT_METHOD cm on ct.contact_method_id = cm.id\nJOIN T_USER_SITE us ON u.id = us.user_id\nJOIN T_SITE s on us.site_id = s.id\nLEFT JOIN T_COUNTRY sc on s.country_id = sc.id \nLEFT JOIN T_COUNTRY cic on ci.country_id = cic.id \n",
+						"queryTimeout": "02:00:00"
+					},
+					"dataset": {
+						"referenceName": "RecoveryPlanner",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Set variable RecoveryPlannerUsers",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "Get Recovery Planner Users",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "RecoveryPlannerUsers",
+					"value": {
+						"value": "@activity('Get Recovery Planner Users').output.value",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "ForEach1",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Set variable RecoveryPlannerUsers",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@variables('RecoveryPlannerUsers')",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "create new SecurityUser",
+							"type": "Script",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[azstudioSecurityUsers]\n           ([userId]\n           ,[userName]\n           ,[passwordHash]\n           ,[userStateId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[passwordResetRequired]\n           ,[lat]\n           ,[lng]\n           ,[consecutiveFailedLoginAttempts]\n           ,[dateTimePasswordLockout]\n           ,[externalSystemId]\n           ,[timeZoneId]\n           ,[seed]\n           ,[isFullyMigrated]\n           ,[isSelfRegistered]\n           ,[dateTimePasswordLastModified])\nSELECT '@{item().newUserId}' as newUserId\n, '@{item().username}' as username\n, '@{item().password}' as password\n, case when '@{item().role}' = 'LISTED' then '@{variables('userStateId_Active')}' else '@{variables('userStateId_Pending')}' end as userStateId\n, CURRENT_TIMESTAMP as dateTimeCreated\n, '@{variables('CreatedByGUID')}' as createdById\n, CURRENT_TIMESTAMP as dateTimeLastModified\n, '@{variables('CreatedByGUID')}' as lastModifiedById\n, 1 as passwordResetRequired\n, @{item().latitude} as lat\n, @{item().longitude} as lng\n, 0 as consecutiveFailedLoginAttempts\n, CURRENT_TIMESTAMP as dateTimePasswordLockout\n, '@{item().externalId}' as externalSystemId\n, '@{item().timeZoneId}' as timeZoneId\n, '' as seed\n, 0 as isFullyMigrated\n, 0 as isSelfRegistered\n, CURRENT_TIMESTAMP as dateTimePasswordLastModified",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						},
+						{
+							"name": "Create EntityUsers entries",
+							"type": "Script",
+							"dependsOn": [
+								{
+									"activity": "create new SecurityUser",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"linkedServiceName": {
+								"referenceName": "AzureSqlDatabase_Preparis_dev",
+								"type": "LinkedServiceReference"
+							},
+							"typeProperties": {
+								"scripts": [
+									{
+										"type": "Query",
+										"text": {
+											"value": "INSERT INTO [dbo].[azstudioEntityUsers]\n           ([entityUserItemId]\n           ,[entityId]\n           ,[userId]\n           ,[dateTimeCreated]\n           ,[createdById]\n           ,[dateTimeLastModified]\n           ,[lastModifiedById]\n           ,[isPrimaryRelationship]\n           ,[isManager])\n     VALUES\n           ('@{item().entityUserItemId_portal}'\n           ,'@{pipeline().parameters.PortalEntityID}'\n           ,'@{item().newUserId}'\n           ,CURRENT_TIMESTAMP\n           ,'@{variables('CreatedByGUID')}'\n           ,CURRENT_TIMESTAMP\n           ,'@{variables('CreatedByGUID')}'\n           ,0\n           ,NULL),\n            ('@{item().entityUserItemId_location}'\n           ,'@{pipeline().parameters.LocationEntityId}'\n           ,'@{item().newUserId}'\n           ,CURRENT_TIMESTAMP\n           ,'@{variables('CreatedByGUID')}'\n           ,CURRENT_TIMESTAMP\n           ,'@{variables('CreatedByGUID')}'\n           ,0\n           ,NULL)",
+											"type": "Expression"
+										}
+									}
+								],
+								"scriptBlockExecutionTimeout": "02:00:00"
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"PortalEntityID": {
+				"type": "string",
+				"defaultValue": "7cbeaaf5-0b30-4809-91d5-f0e00446544d"
+			},
+			"LocationEntityId": {
+				"type": "string",
+				"defaultValue": "19ed2bc4-b9e7-4a56-ad3e-981b1010254e"
+			}
+		},
+		"variables": {
+			"userStateId_Active": {
+				"type": "String",
+				"defaultValue": "c1ff019b-b3f6-411c-b04e-59294e9090fe"
+			},
+			"userStateId_Pending": {
+				"type": "String",
+				"defaultValue": "b5d6bc28-5e6d-4bd1-b028-f7e9a6c6b7a1"
+			},
+			"RecoveryPlannerUsers": {
+				"type": "Array"
+			},
+			"SelectString": {
+				"type": "String"
+			},
+			"CreatedByGUID": {
+				"type": "String",
+				"defaultValue": "7b5ea827-bcd7-4a8a-8807-fc7e94a93455"
+			}
+		},
+		"folder": {
+			"name": "Backup"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-02-15T15:58:32Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

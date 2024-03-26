@@ -1,0 +1,49 @@
+{
+	"name": "Lookup results tester",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup RP Events",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "select documentId from ppdocsDocuments \nwhere documentName = 'Test RPX dne'\nand folderId = '65a2a94a-8d9f-462c-8f0f-e4b97709b67a'\nand documentStateId = 'a615996c-640f-47d1-948a-4a3cb1bc7766'\nand owningAccountId = 'd73532f5-55d9-4bea-99d9-389c25ac725a'",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "Preparis",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": true
+				}
+			}
+		],
+		"parameters": {
+			"rp_db_name": {
+				"type": "string",
+				"defaultValue": "afsvision"
+			},
+			"rp_server_name": {
+				"type": "string",
+				"defaultValue": "recovery-planner-mysql-server.mysql.database.azure.com"
+			}
+		},
+		"folder": {
+			"name": "Testers and Misc"
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-03-13T10:02:51Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}
